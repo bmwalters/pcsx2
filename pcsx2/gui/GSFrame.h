@@ -24,6 +24,9 @@
 #ifdef __WXGTK__
 #include <gdk/gdkx.h>
 #include <gtk/gtk.h>
+#ifdef GDK_WINDOWING_WAYLAND
+#include <gdk/gdkwayland.h>
+#endif
 #endif
 
 enum LimiterModeType

@@ -362,18 +362,127 @@ bool GSWndEGL_X11::SetWindowText(const char* title)
 #endif
 
 //////////////////////////////////////////////////////////////////////
-// Wayland platform (just a place holder)
+// Wayland platform
 //////////////////////////////////////////////////////////////////////
 #if GS_EGL_WL
 
 // static method
 bool GSWndEGL_WL::SupportsWindow(const NativeWindowHandle& display_handle)
 {
-	return false;
+	// Validate that this is an X11 window handle.
+	if (display_handle.kind != NativeWindowHandle::WAYLAND)
+		return false;
+
+	// Check the supported extension
+	const char *client_extensions = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+	if (!client_extensions) {
+		fprintf(stderr, "EGL: Client extension not supported\n");
+		return false;
+	}
+	fprintf(stdout, "EGL: Supported extensions: %s\n", client_extensions);
+
+	// Check platform extensions are supported (Note: there are core in 1.5)
+	if (!strstr(client_extensions, "EGL_EXT_platform_base")) {
+		fprintf(stderr, "EGL: Dynamic platform selection isn't supported\n");
+		return false;
+	}
+
+	// Finally we can select the platform
+	if (!strstr(client_extensions, "EGL_EXT_platform_wayland")) {
+		fprintf(stderr, "EGL: no compatible platform found\n");
+		return false;
+	}
+
+	return true;
 }
 
+// wl_registry listener
+static void gs_wl_registry_add_global(void *data, wl_registry *registry, uint32_t name, const char *interface, uint32_t version)
+{
+	((GSWndEGL_WL *)data)->RegistryAddGlobal(registry, name, interface, version);
+}
+
+static void gs_wl_registry_remove_global(void *data, wl_registry *registry, uint32_t name)
+{
+	((GSWndEGL_WL *)data)->RegistryRemoveGlobal(registry, name);
+}
+
+static const wl_registry_listener gs_wl_registry_listener = {
+	gs_wl_registry_add_global,
+	gs_wl_registry_remove_global,
+};
+
+// xdg_wm_base listener
+static void gs_xdg_wm_base_ping(void *data, xdg_wm_base *xdg_wm_base, uint32_t serial)
+{
+	xdg_wm_base_pong(xdg_wm_base, serial);
+}
+
+static const xdg_wm_base_listener gs_xdg_wm_base_listener = {
+	gs_xdg_wm_base_ping,
+};
+
+// xdg_surface listener
+static void gs_xdg_surface_configure(void *data, xdg_surface *xdg_surface, uint32_t serial)
+{
+	((GSWndEGL_WL *)data)->XDGSurfaceConfigure(xdg_surface, serial);
+}
+
+static const xdg_surface_listener gs_wl_xdg_surface_listener = {
+	gs_xdg_surface_configure,
+};
+
+// xdg_toplevel listener
+
+static void gs_xdg_toplevel_configure(void *data, xdg_toplevel *xdg_toplevel, int32_t width, int32_t height, wl_array *states)
+{
+	((GSWndEGL_WL *)data)->XDGToplevelConfigure(xdg_toplevel, width, height, states);
+}
+
+static void gs_xdg_toplevel_close(void *data, xdg_toplevel *xdg_toplevel)
+{
+	((GSWndEGL_WL *)data)->XDGToplevelClose(xdg_toplevel);
+}
+
+static const xdg_toplevel_listener gs_wl_xdg_toplevel_listener = {
+	gs_xdg_toplevel_configure,
+	gs_xdg_toplevel_close,
+};
+
 GSWndEGL_WL::GSWndEGL_WL()
-	: GSWndEGL(EGL_PLATFORM_WAYLAND_KHR), m_NativeDisplay(nullptr), m_NativeWindow(nullptr)
+	: GSWndEGL(EGL_PLATFORM_WAYLAND_KHR), m_NativeDisplay(nullptr), m_NativeWindow(nullptr),
+	  m_wl_registry(nullptr), m_wl_compositor(nullptr), m_xdg_wm_base(nullptr),
+	  m_wl_surface(nullptr), m_xdg_surface(nullptr), m_xdg_toplevel(nullptr)
+{
+}
+
+void GSWndEGL_WL::RegistryAddGlobal(wl_registry *registry, uint32_t name, const char *interface, uint32_t version)
+{
+	if (strcmp(interface, wl_compositor_interface.name) == 0) {
+		m_wl_compositor = (wl_compositor *)wl_registry_bind(registry, name, &wl_compositor_interface, 4);
+	}
+	if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
+		m_xdg_wm_base = (xdg_wm_base *)wl_registry_bind(registry, name, &xdg_wm_base_interface, 1);
+		xdg_wm_base_add_listener(m_xdg_wm_base, &gs_xdg_wm_base_listener, this);
+	}
+}
+
+void GSWndEGL_WL::RegistryRemoveGlobal(wl_registry *registry, uint32_t name)
+{
+}
+
+void GSWndEGL_WL::XDGSurfaceConfigure(xdg_surface *xdg_surface, uint32_t serial)
+{
+	xdg_surface_ack_configure(xdg_surface, serial);
+}
+
+void GSWndEGL_WL::XDGToplevelConfigure(xdg_toplevel *xdg_toplevel, int32_t width, int32_t height, wl_array *states)
+{
+	// Configure and Close events will only be sent to us when we manage our own window.
+	// We don't have our own event loop anyway, so ignore configure and close events for now.
+}
+
+void GSWndEGL_WL::XDGToplevelClose(xdg_toplevel *xdg_toplevel)
 {
 }
 
@@ -382,28 +491,120 @@ void *GSWndEGL_WL::CreateNativeDisplay()
 	if (m_NativeDisplay == nullptr)
 		m_NativeDisplay = wl_display_connect(NULL);
 
+	if (m_wl_registry == nullptr) {
+		m_wl_registry = wl_display_get_registry(m_NativeDisplay);
+		wl_registry_add_listener(m_wl_registry, &gs_wl_registry_listener, this);
+	}
+
+	wl_display_roundtrip(m_NativeDisplay);
+
 	return (void*)m_NativeDisplay;
 }
 
 void *GSWndEGL_WL::CreateNativeWindow(int w, int h)
 {
-	return nullptr;
+	if (m_NativeDisplay == nullptr) {
+		fprintf(stderr, "EGL Wayland: display wasn't created before the window\n");
+		throw GSDXRecoverableError();
+	}
+
+	if (m_wl_compositor == nullptr) {
+		fprintf(stderr, "EGL Wayland: compositor global required but not present\n");
+		throw GSDXRecoverableError();
+	}
+
+	m_wl_surface = wl_compositor_create_surface(m_wl_compositor);
+	if (m_wl_surface == nullptr) {
+		fprintf(stderr, "EGL Wayland: wl_compositor_create_surface failed\n");
+		throw GSDXRecoverableError();
+	}
+
+	m_NativeWindow = wl_egl_window_create(m_wl_surface, w, h);
+	if (m_NativeWindow == nullptr) {
+		fprintf(stderr, "EGL Wayland: wl_egl_window_create failed\n");
+		throw GSDXRecoverableError();
+	}
+
+	if (m_xdg_wm_base == nullptr) {
+		fprintf(stderr, "EGL Wayland: xdg_wm_base global required but not present\n");
+		throw GSDXRecoverableError();
+	}
+
+	m_xdg_surface = xdg_wm_base_get_xdg_surface(m_xdg_wm_base, m_wl_surface);
+	if (m_xdg_surface == nullptr) {
+		fprintf(stderr, "EGL Wayland: xdg_wm_base_get_xdg_surface failed\n");
+		throw GSDXRecoverableError();
+	}
+
+	xdg_surface_add_listener(m_xdg_surface, &gs_wl_xdg_surface_listener, this);
+
+	m_xdg_toplevel = xdg_surface_get_toplevel(m_xdg_surface);
+	if (m_xdg_toplevel == nullptr) {
+		fprintf(stderr, "EGL Wayland: xdg_surface_get_toplevel failed\n");
+		throw GSDXRecoverableError();
+	}
+
+	xdg_toplevel_add_listener(m_xdg_toplevel, &gs_wl_xdg_toplevel_listener, this);
+
+	wl_surface_commit(m_wl_surface);
+
+	wl_display_flush(m_NativeDisplay);
+	wl_display_roundtrip(m_NativeDisplay);
+
+	return m_NativeWindow;
 }
 
 void GSWndEGL_WL::AttachNativeWindow(const NativeWindowHandle& handle, void** out_native_display, void** out_native_window)
 {
+	// TODO
 	*out_native_display = nullptr;
 	*out_native_window = nullptr;
 }
 
 NativeWindowHandle GSWndEGL_WL::GetNativeWindowHandle()
 {
-	return {};
+	return { NativeWindowHandle::WAYLAND, { /* TODO */ } };
 }
 
 void GSWndEGL_WL::DestroyNativeResources()
 {
+	if (m_NativeWindow) {
+		wl_egl_window_destroy(m_NativeWindow);
+		m_NativeWindow = nullptr;
+	}
+
+	if (m_xdg_toplevel) {
+		xdg_toplevel_destroy(m_xdg_toplevel);
+		m_xdg_toplevel = nullptr;
+	}
+
+	if (m_xdg_surface) {
+		xdg_surface_destroy(m_xdg_surface);
+		m_xdg_surface = nullptr;
+	}
+
+	if (m_wl_surface) {
+		wl_surface_destroy(m_wl_surface);
+		m_wl_surface = nullptr;
+	}
+
+	if (m_xdg_wm_base) {
+		xdg_wm_base_destroy(m_xdg_wm_base);
+		m_xdg_wm_base = nullptr;
+	}
+
+	if (m_wl_compositor) {
+		wl_compositor_destroy(m_wl_compositor);
+		m_wl_compositor = nullptr;
+	}
+
+	if (m_wl_registry) {
+		wl_registry_destroy(m_wl_registry);
+		m_wl_registry = nullptr;
+	}
+
 	if (m_NativeDisplay) {
+		wl_display_flush(m_NativeDisplay);
 		wl_display_disconnect(m_NativeDisplay);
 		m_NativeDisplay = nullptr;
 	}
@@ -411,6 +612,11 @@ void GSWndEGL_WL::DestroyNativeResources()
 
 bool GSWndEGL_WL::SetWindowText(const char* title)
 {
+	if (!m_managed) return true;
+
+	if (m_xdg_toplevel == nullptr) return false;
+
+	xdg_toplevel_set_title(m_xdg_toplevel, title);
 	return true;
 }
 

@@ -17,6 +17,7 @@
 struct NativeWindowHandle {
 	enum {
 #if defined(__unix__)
+		WAYLAND,
 		X11
 #elif defined(_WIN32)
 		WIN32

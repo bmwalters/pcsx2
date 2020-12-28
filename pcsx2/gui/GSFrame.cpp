@@ -579,6 +579,14 @@ NativeWindowHandle GSFrame::GetNativeWindowHandle()
 
 	GdkWindow* draw_window = gtk_widget_get_window(child_window);
 
+#ifdef GDK_WINDOWING_WAYLAND
+	if (GDK_IS_WAYLAND_WINDOW(draw_window))
+	{
+		handle.kind = NativeWindowHandle::WAYLAND;
+		handle.wayland = {}; // TODO
+	}
+	else
+#endif
 #ifdef GDK_WINDOWING_X11
 	if (GDK_IS_X11_WINDOW(draw_window))
 	{
