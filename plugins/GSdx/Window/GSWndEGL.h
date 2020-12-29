@@ -53,12 +53,12 @@ public:
 	virtual ~GSWndEGL() {};
 
 	bool Create(const std::string& title, int w, int h) final;
-	bool Attach(void* handle, bool managed = true) final;
+	bool Attach(void* display_handle, void* handle, bool managed = true) final;
 	void Detach() final;
 
 	virtual void *CreateNativeDisplay() = 0;
 	virtual void *CreateNativeWindow(int w, int h) = 0; // GSopen1/PSX API
-	virtual void *AttachNativeWindow(void *handle) = 0;
+	virtual void *AttachNativeWindow(void *display_handle, void *handle) = 0;
 	virtual void DestroyNativeResources() = 0;
 
 	GSVector4i GetClientRect();
@@ -103,7 +103,7 @@ public:
 
 	void *CreateNativeDisplay() final;
 	void *CreateNativeWindow(int w, int h) final;
-	void *AttachNativeWindow(void *handle) final;
+	void *AttachNativeWindow(void *display_handle, void *handle) final;
 	void DestroyNativeResources() final;
 
 	bool SetWindowText(const char* title) final;
@@ -139,7 +139,7 @@ public:
 
 	void *CreateNativeDisplay() final;
 	void *CreateNativeWindow(int w, int h) final;
-	void *AttachNativeWindow(void *handle) final;
+	void *AttachNativeWindow(void *display_handle, void *surface_handle) final;
 	void DestroyNativeResources() final;
 
 	bool SetWindowText(const char* title) final;

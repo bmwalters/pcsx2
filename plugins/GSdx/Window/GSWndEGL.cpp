@@ -167,11 +167,11 @@ void GSWndEGL::BindAPI()
 	}
 }
 
-bool GSWndEGL::Attach(void* handle, bool managed)
+bool GSWndEGL::Attach(void* display_handle, void* window_handle, bool managed)
 {
 	m_managed = managed;
 
-	m_native_window = AttachNativeWindow(handle);
+	m_native_window = AttachNativeWindow(display_handle, window_handle);
 
 	OpenEGLDisplay();
 
@@ -333,7 +333,7 @@ void *GSWndEGL_X11::CreateNativeWindow(int w, int h)
 	return (void*)&m_NativeWindow;
 }
 
-void *GSWndEGL_X11::AttachNativeWindow(void *handle)
+void *GSWndEGL_X11::AttachNativeWindow(void *display_handle, void *handle)
 {
 	m_NativeWindow = *(Window*)handle;
 	return handle;
@@ -448,12 +448,13 @@ void GSWndEGL_WL::RegistryAddGlobal(wl_registry *registry, uint32_t name, const 
 
 void GSWndEGL_WL::RegistryRemoveGlobal(wl_registry *registry, uint32_t name)
 {
-	// TODO
+	// TODO?
 }
 
 void GSWndEGL_WL::XDGSurfaceConfigure(xdg_surface *xdg_surface)
 {
-	// TODO?
+	// TODO: Implement this for the CreateNativeWindow codepath.
+	// The AttachNativeWindow path doesn't need this since its toolkit will handle configuration.
 	wl_surface_commit(m_wl_surface);
 }
 
@@ -526,13 +527,33 @@ void *GSWndEGL_WL::CreateNativeWindow(int w, int h)
 	return m_NativeWindow;
 }
 
-void *GSWndEGL_WL::AttachNativeWindow(void *handle)
+void *GSWndEGL_WL::AttachNativeWindow(void *display_handle, void *surface_handle)
 {
-	// TODO
-	// m_NativeWindow = (wl_egl_window*)handle;
-	// return handle;
-	CreateNativeDisplay();
-	return CreateNativeWindow(512, 512);
+	if (m_NativeWindow != nullptr) {
+		fprintf(stderr, "EGL Wayland: AttachNativeWindow can't be called twice\n");
+		throw GSDXRecoverableError();
+	}
+
+	// the caller provides us with their existing wl_surface
+	// created by a gui toolkit. we don't need to create any
+	// additional objects aside from our wl_egl_window.
+	wl_display *display = *(wl_display **)display_handle;
+	wl_surface *surface = *(wl_surface **)surface_handle;
+	// we aren't storing the wl_surface because we don't own it.
+
+	// TODO: dimensions
+	m_NativeWindow = wl_egl_window_create(surface, 200, 10);
+	if (m_NativeWindow == nullptr) {
+		fprintf(stderr, "EGL Wayland: wl_egl_window_create failed\n");
+		throw GSDXRecoverableError();
+	}
+
+	wl_surface_commit(surface);
+
+	wl_display_flush(display);
+	wl_display_roundtrip(display);
+
+	return m_NativeWindow;
 }
 
 void GSWndEGL_WL::DestroyNativeResources()

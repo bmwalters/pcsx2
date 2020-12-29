@@ -1012,9 +1012,9 @@ void Pcsx2App::OpenGsPanel()
 #ifdef GDK_WINDOWING_WAYLAND
 	if (GDK_IS_WAYLAND_DISPLAY(display))
 	{
-		// TODO
-		pDsp[0] = NULL;
-		pDsp[1] = NULL;
+		gdk_wayland_window_set_use_custom_surface(draw_window); // TODO: Need this?
+		pDsp[0] = (uptr)(void *)gdk_wayland_display_get_wl_display(display);
+		pDsp[1] = (uptr)(void *)gdk_wayland_window_get_wl_surface(draw_window);
     }
 	else
 #endif

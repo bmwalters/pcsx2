@@ -269,8 +269,10 @@ static int _GSopen(void** dsp, const char* title, GSRendererType renderer, int t
 			int w = theApp.GetConfigI("ModeWidth");
 			int h = theApp.GetConfigI("ModeHeight");
 #if defined(__unix__)
+			void *display_handle = dsp;
 			void *win_handle = (void*)((uptr*)(dsp)+1);
 #else
+			void *display_handle = nullptr;
 			void *win_handle = *dsp;
 #endif
 
@@ -289,7 +291,7 @@ static int _GSopen(void** dsp, const char* title, GSRendererType renderer, int t
 					}
 					else
 					{
-						wnd->Attach(win_handle, false);
+						wnd->Attach(display_handle, win_handle, false);
 					}
 
 					window = wnd; // Previous code will throw if window isn't supported
