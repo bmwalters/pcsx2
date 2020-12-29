@@ -37,20 +37,27 @@
 // Basic functions.
 EXPORT_C_(s32)
 PADinit(u32 flags);
+
 // pDisplay normally is passed a handle to the GS plugins window.
 EXPORT_C_(s32)
 PADopen(void *pDisplay);
+
 EXPORT_C_(void)
 PADclose();
+
 EXPORT_C_(void)
 PADshutdown();
+
 // PADkeyEvent is called every vsync (return NULL if no event)
 EXPORT_C_(keyEvent *)
 PADkeyEvent();
+
 EXPORT_C_(u8)
 PADstartPoll(u8 pad);
+
 EXPORT_C_(u8)
 PADpoll(u8 value);
+
 // returns: 1 if supported pad1
 //			2 if supported pad2
 //			3 if both are supported
@@ -70,6 +77,7 @@ PADupdate(u8 pad);
 // Extended functions
 EXPORT_C_(void)
 PADgsDriverInfo(GSdriverInfo *info);
+
 EXPORT_C_(s32)
 PADfreeze(u8 mode, freezeData *data);
 
@@ -88,8 +96,10 @@ PADsetSlot(u8 port, u8 slot);
 
 EXPORT_C_(void)
 PADconfigure();
+
 EXPORT_C_(void)
 PADabout();
+
 EXPORT_C_(s32)
 PADtest();
 

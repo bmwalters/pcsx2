@@ -24,6 +24,8 @@
 #include "Gif.h"
 #ifdef _WIN32
 #include "PAD/Windows/PAD.h"
+#elif defined(SDL_BUILD)
+#include "PAD/SDL/PAD.h"
 #else
 #include "PAD/Linux/PAD.h"
 #endif

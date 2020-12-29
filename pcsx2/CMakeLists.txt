@@ -540,6 +540,16 @@ set(pcsx2PADHeaders
     ${PADImgHeader}/arrow_right.h
     )
 
+# PAD/SDL sources
+set(pcsx2PADSources
+    PAD/SDL/PAD.cpp
+    )
+
+# PAD/SDL headers
+set(pcsx2PADHeaders
+    PAD/SDL/PAD.h
+    )
+
 # DebugTools sources
 set(pcsx2DebugToolsSources
 	DebugTools/DebugInterface.cpp
