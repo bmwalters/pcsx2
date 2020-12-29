@@ -171,10 +171,8 @@ bool GSWndEGL::Attach(void* display_handle, void* window_handle, bool managed)
 {
 	m_managed = managed;
 
-	m_native_window = AttachNativeWindow(display_handle, window_handle);
-
+	AttachNativeWindow(display_handle, window_handle, &m_native_display, &m_native_window);
 	OpenEGLDisplay();
-
 	FullContextInit();
 
 	return true;
@@ -205,10 +203,10 @@ bool GSWndEGL::Create(const std::string& title, int w, int h)
 
 	m_managed = true;
 
+	m_native_display = CreateNativeDisplay();
 	OpenEGLDisplay();
 
 	m_native_window = CreateNativeWindow(w, h);
-
 	FullContextInit();
 
 	return true;
@@ -260,13 +258,8 @@ void GSWndEGL::CloseEGLDisplay()
 
 void GSWndEGL::OpenEGLDisplay()
 {
-	// We only need a native display when we manage the window ourself.
-	// By default, EGL will create its own native display. This way the driver knows
-	// that display will be thread safe and so it can enable multithread optimization.
-	void *native_display = (m_managed) ? CreateNativeDisplay() : nullptr;
-
 	// Create an EGL display from the native display
-	m_eglDisplay = eglGetPlatformDisplay(m_platform, native_display, nullptr);
+	m_eglDisplay = eglGetPlatformDisplay(m_platform, m_native_display, nullptr);
 	if (m_eglDisplay == EGL_NO_DISPLAY) {
 		fprintf(stderr,"EGL: Failed to open a display! (0x%x)\n", eglGetError() );
 		throw GSDXRecoverableError();
@@ -333,10 +326,17 @@ void *GSWndEGL_X11::CreateNativeWindow(int w, int h)
 	return (void*)&m_NativeWindow;
 }
 
-void *GSWndEGL_X11::AttachNativeWindow(void *display_handle, void *handle)
+void GSWndEGL_X11::AttachNativeWindow(void *display_handle, void *handle, void **out_native_display, void **out_native_window)
 {
 	m_NativeWindow = *(Window*)handle;
-	return handle;
+
+	// We only need a native display when we manage the window ourself.
+	// By default, EGL will create its own native display. This way the driver knows
+	// that display will be thread safe and so it can enable multithread optimization.
+	m_NativeDisplay = nullptr;
+
+	*out_native_display = m_NativeDisplay;
+	*out_native_window = (void *)m_NativeWindow;
 }
 
 void GSWndEGL_X11::DestroyNativeResources()
@@ -428,8 +428,8 @@ static void gs_wl_client_log_handler(const char *msg, va_list args) {
 
 GSWndEGL_WL::GSWndEGL_WL()
 	: GSWndEGL(EGL_PLATFORM_WAYLAND_KHR), m_NativeDisplay(nullptr), m_NativeWindow(nullptr),
-	  m_wl_registry(nullptr), m_wl_compositor(nullptr), m_xdg_wm_base(nullptr),
-	  m_wl_surface(nullptr), m_xdg_surface(nullptr), m_xdg_toplevel(nullptr)
+	  m_wl_registry(nullptr), m_wl_compositor(nullptr), m_wl_subcompositor(nullptr), m_xdg_wm_base(nullptr),
+	  m_wl_surface(nullptr), m_wl_subsurface(nullptr), m_xdg_surface(nullptr), m_xdg_toplevel(nullptr)
 {
 	// TODO: Move this to location where it will only ever execute once?
 	wl_log_set_handler_client(gs_wl_client_log_handler);
@@ -439,6 +439,9 @@ void GSWndEGL_WL::RegistryAddGlobal(wl_registry *registry, uint32_t name, const 
 {
 	if (strcmp(interface, wl_compositor_interface.name) == 0) {
 		m_wl_compositor = (wl_compositor *)wl_registry_bind(registry, name, &wl_compositor_interface, 4);
+	}
+	if (strcmp(interface, wl_subcompositor_interface.name) == 0) {
+		m_wl_subcompositor = (wl_subcompositor *)wl_registry_bind(registry, name, &wl_subcompositor_interface, 1);
 	}
 	if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
 		m_xdg_wm_base = (xdg_wm_base *)wl_registry_bind(registry, name, &xdg_wm_base_interface, 1);
@@ -527,33 +530,69 @@ void *GSWndEGL_WL::CreateNativeWindow(int w, int h)
 	return m_NativeWindow;
 }
 
-void *GSWndEGL_WL::AttachNativeWindow(void *display_handle, void *surface_handle)
+#include <fstream>
+
+void GSWndEGL_WL::AttachNativeWindow(void *display_handle, void *surface_handle, void **out_native_display, void **out_native_window)
 {
 	if (m_NativeWindow != nullptr) {
 		fprintf(stderr, "EGL Wayland: AttachNativeWindow can't be called twice\n");
 		throw GSDXRecoverableError();
 	}
 
-	// the caller provides us with their existing wl_surface
-	// created by a gui toolkit. we don't need to create any
-	// additional objects aside from our wl_egl_window.
-	wl_display *display = *(wl_display **)display_handle;
-	wl_surface *surface = *(wl_surface **)surface_handle;
-	// we aren't storing the wl_surface because we don't own it.
+	// the caller provides us with a display and surface through pDsp.
+	// we create a subsurface of the parent surface to render to.
+	PluginDisplayPropertiesWayland props = **(PluginDisplayPropertiesWayland **)display_handle;
+	// we don't store display or parent_surface because we don't own them.
 
-	// TODO: dimensions
-	m_NativeWindow = wl_egl_window_create(surface, 200, 10);
+	m_wl_registry = wl_display_get_registry(props.display);
+	wl_registry_add_listener(m_wl_registry, &gs_wl_registry_listener, this);
+
+	wl_display_roundtrip(props.display);
+	if (m_wl_compositor == nullptr) {
+		fprintf(stderr, "EGL Wayland: wl_compositor global not present\n");
+		throw GSDXRecoverableError();
+	}
+	if (m_wl_subcompositor == nullptr) {
+		fprintf(stderr, "EGL Wayland: wl_subcompositor global not present\n");
+		throw GSDXRecoverableError();
+	}
+
+	m_wl_surface = wl_compositor_create_surface(m_wl_compositor);
+	if (m_wl_surface == nullptr) {
+		fprintf(stderr, "EGL Wayland: wl_compositor_create_surface failed\n");
+		throw GSDXRecoverableError();
+	}
+
+	m_wl_subsurface = wl_subcompositor_get_subsurface(m_wl_subcompositor, m_wl_surface, props.parent_surface);
+	if (m_wl_subsurface == nullptr) {
+		fprintf(stderr, "EGL Wayland: wl_subcompositor_get_subsurface failed\n");
+		throw GSDXRecoverableError();
+	}
+	wl_subsurface_set_desync(m_wl_subsurface);
+	wl_subsurface_set_position(m_wl_subsurface, props.x, props.y);
+
+	// Give the subsurface an empty input region so the main surface gets input.
+	wl_region *region = wl_compositor_create_region(m_wl_compositor);
+	if (region == nullptr) {
+		fprintf(stderr, "EGL Wayland: wl_compositor_create_region failed\n");
+		throw GSDXRecoverableError();
+	}
+	wl_surface_set_input_region(m_wl_surface, region);
+	wl_region_destroy(region);
+
+	m_NativeWindow = wl_egl_window_create(m_wl_surface, props.w * props.scale, props.h * props.scale);
 	if (m_NativeWindow == nullptr) {
 		fprintf(stderr, "EGL Wayland: wl_egl_window_create failed\n");
 		throw GSDXRecoverableError();
 	}
 
-	wl_surface_commit(surface);
+	wl_surface_commit(m_wl_surface);
 
-	wl_display_flush(display);
-	wl_display_roundtrip(display);
+	wl_display_flush(props.display);
+	wl_display_roundtrip(props.display);
 
-	return m_NativeWindow;
+	*out_native_display = props.display;
+	*out_native_window = m_NativeWindow;
 }
 
 void GSWndEGL_WL::DestroyNativeResources()
@@ -573,6 +612,11 @@ void GSWndEGL_WL::DestroyNativeResources()
 		m_xdg_surface = nullptr;
 	}
 
+	if (m_wl_subsurface) {
+		wl_subsurface_destroy(m_wl_subsurface);
+		m_wl_subsurface = nullptr;
+	}
+
 	if (m_wl_surface) {
 		wl_surface_destroy(m_wl_surface);
 		m_wl_surface = nullptr;
@@ -581,6 +625,11 @@ void GSWndEGL_WL::DestroyNativeResources()
 	if (m_xdg_wm_base) {
 		xdg_wm_base_destroy(m_xdg_wm_base);
 		m_xdg_wm_base = nullptr;
+	}
+
+	if (m_wl_subcompositor) {
+		wl_subcompositor_destroy(m_wl_subcompositor);
+		m_wl_subcompositor = nullptr;
 	}
 
 	if (m_wl_compositor) {
@@ -602,6 +651,9 @@ void GSWndEGL_WL::DestroyNativeResources()
 
 bool GSWndEGL_WL::SetWindowText(const char* title)
 {
+	// TODO: Does this work if toplevel is from a subsurface?
+	return true;
+
 	if (!m_managed) return true;
 
 	if (m_xdg_toplevel == nullptr) return false;

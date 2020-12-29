@@ -181,7 +181,6 @@ s32 CALLBACK GSfreeze(int mode, freezeData *data);
 void CALLBACK GSconfigure();
 void CALLBACK GSabout();
 s32 CALLBACK GStest();
-
 #endif
 
 // might be useful for emulators
@@ -223,6 +222,13 @@ typedef void(CALLBACK *_GSwriteCSR)(u32 value);
 typedef bool(CALLBACK *_GSmakeSnapshot)(const char *path);
 typedef void(CALLBACK *_GSmakeSnapshot2)(const char *path, int *, int);
 
+// When the GS window handle is a Wayland window,
+// the first entry of pDsp will point to one of these.
+struct PluginDisplayPropertiesWayland {
+	void* /* wl_display* */ display;
+	void* /* wl_surface* */ parent_surface;
+	int x, y, w, h, scale;
+};
 #endif
 
 #ifdef PLUGINfuncs

@@ -30,6 +30,7 @@
 
 class GSWndEGL : public GSWndGL
 {
+	void *m_native_display;
 	void *m_native_window;
 
 	EGLDisplay m_eglDisplay;
@@ -58,7 +59,7 @@ public:
 
 	virtual void *CreateNativeDisplay() = 0;
 	virtual void *CreateNativeWindow(int w, int h) = 0; // GSopen1/PSX API
-	virtual void *AttachNativeWindow(void *display_handle, void *handle) = 0;
+	virtual void AttachNativeWindow(void *display_handle, void *handle, void **out_native_display, void **out_native_window) = 0;
 	virtual void DestroyNativeResources() = 0;
 
 	GSVector4i GetClientRect();
@@ -103,7 +104,7 @@ public:
 
 	void *CreateNativeDisplay() final;
 	void *CreateNativeWindow(int w, int h) final;
-	void *AttachNativeWindow(void *display_handle, void *handle) final;
+	void AttachNativeWindow(void *display_handle, void *handle, void **out_native_display, void **out_native_window) final;
 	void DestroyNativeResources() final;
 
 	bool SetWindowText(const char* title) final;
@@ -122,11 +123,13 @@ class GSWndEGL_WL : public GSWndEGL
 	wl_display    *m_NativeDisplay;
 	wl_egl_window *m_NativeWindow;
 
-	wl_registry   *m_wl_registry;
-	wl_compositor *m_wl_compositor;
-	xdg_wm_base   *m_xdg_wm_base;
+	wl_registry      *m_wl_registry;
+	wl_compositor    *m_wl_compositor;
+	wl_subcompositor *m_wl_subcompositor;
+	xdg_wm_base      *m_xdg_wm_base;
 
 	wl_surface    *m_wl_surface;
+	wl_subsurface *m_wl_subsurface;
 	xdg_surface   *m_xdg_surface;
 	xdg_toplevel  *m_xdg_toplevel;
 
@@ -139,7 +142,7 @@ public:
 
 	void *CreateNativeDisplay() final;
 	void *CreateNativeWindow(int w, int h) final;
-	void *AttachNativeWindow(void *display_handle, void *surface_handle) final;
+	void AttachNativeWindow(void *display_handle, void *handle, void **out_native_display, void **out_native_window) final;
 	void DestroyNativeResources() final;
 
 	bool SetWindowText(const char* title) final;
@@ -148,6 +151,14 @@ public:
 	void RegistryAddGlobal(wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 	void RegistryRemoveGlobal(wl_registry *registry, uint32_t name);
 	void XDGSurfaceConfigure(xdg_surface *xdg_surface);
+};
+
+// When the GS window handle is a Wayland window,
+// the first entry of pDsp will point to one of these.
+struct PluginDisplayPropertiesWayland {
+	wl_display* display;
+	wl_surface* parent_surface;
+	int x, y, w, h, scale;
 };
 
 #endif

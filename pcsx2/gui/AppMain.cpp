@@ -1005,21 +1005,31 @@ void Pcsx2App::OpenGsPanel()
 
 	gtk_widget_realize(child_window); // create the widget to allow to use GDK_WINDOW_* macro
 	gtk_widget_set_double_buffered(child_window, false); // Disable the widget double buffer, you will use the opengl one
+	gtk_widget_map(child_window);
+	gtk_widget_show(child_window);
 
 	GdkWindow* draw_window = gtk_widget_get_window(child_window);
-	GdkDisplay* display = gdk_window_get_display(draw_window);
 
 #ifdef GDK_WINDOWING_WAYLAND
-	if (GDK_IS_WAYLAND_DISPLAY(display))
+	if (GDK_IS_WAYLAND_WINDOW(draw_window))
 	{
-		gdk_wayland_window_set_use_custom_surface(draw_window); // TODO: Need this?
-		pDsp[0] = (uptr)(void *)gdk_wayland_display_get_wl_display(display);
-		pDsp[1] = (uptr)(void *)gdk_wayland_window_get_wl_surface(draw_window);
+		GdkDisplay* display = gdk_window_get_display(draw_window);
+
+		// pass enough Wayland context to the plugin so it can create its surface
+		// TODO: Who is responsible for freeing? Same person who clears pDsp.
+		PluginDisplayPropertiesWayland *props_wl = new PluginDisplayPropertiesWayland;
+		props_wl->display = (void *)gdk_wayland_display_get_wl_display(display);
+		props_wl->parent_surface = (void *)gdk_wayland_window_get_wl_surface(draw_window);
+		gdk_window_get_geometry(draw_window, &props_wl->x, &props_wl->y, &props_wl->w, &props_wl->h);
+		props_wl->scale = gdk_window_get_scale_factor(draw_window);
+
+		pDsp[0] = (uptr)(void *)props_wl;
+		pDsp[1] = (uptr)NULL;
     }
 	else
 #endif
 #ifdef GDK_WINDOWING_X11
-	if (GDK_IS_X11_DISPLAY(display))
+	if (GDK_IS_X11_WINDOW(draw_window))
 	{
 	    #if GTK_MAJOR_VERSION < 3
 		Window Xwindow = GDK_WINDOW_XWINDOW(draw_window);
@@ -1034,11 +1044,12 @@ void Pcsx2App::OpenGsPanel()
 	else
 #endif
 	{
+		// TODO: Is this branch taken on Windows?
 		pxAssertDev(false, "Unknown GDK display type. Can't initialize GS Plugin.");
 	}
 #else
 	pDsp[0] = (uptr)gsFrame->GetViewport()->GetHandle();
-	pDsp[1] = NULL;
+	pDsp[1] = (uptr)NULL;
 #endif
 
 	gsFrame->ShowFullScreen( g_Conf->GSWindow.IsFullscreen );
