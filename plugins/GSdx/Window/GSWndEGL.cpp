@@ -176,10 +176,8 @@ bool GSWndEGL::Attach(void* handle, bool managed)
 {
 	m_managed = managed;
 
-	m_native_window = AttachNativeWindow(handle);
-
+	AttachNativeWindow(handle, &m_native_display, &m_native_window);
 	OpenEGLDisplay();
-
 	FullContextInit();
 
 	return true;
@@ -210,10 +208,10 @@ bool GSWndEGL::Create(const std::string& title, int w, int h)
 
 	m_managed = true;
 
+	m_native_display = CreateNativeDisplay();
 	OpenEGLDisplay();
 
 	m_native_window = CreateNativeWindow(w, h);
-
 	FullContextInit();
 
 	return true;
@@ -265,13 +263,8 @@ void GSWndEGL::CloseEGLDisplay()
 
 void GSWndEGL::OpenEGLDisplay()
 {
-	// We only need a native display when we manage the window ourself.
-	// By default, EGL will create its own native display. This way the driver knows
-	// that display will be thread safe and so it can enable multithread optimization.
-	void *native_display = (m_managed) ? CreateNativeDisplay() : nullptr;
-
 	// Create an EGL display from the native display
-	m_eglDisplay = eglGetPlatformDisplay(m_platform, native_display, nullptr);
+	m_eglDisplay = eglGetPlatformDisplay(m_platform, m_native_display, nullptr);
 	if (m_eglDisplay == EGL_NO_DISPLAY) {
 		fprintf(stderr,"EGL: Failed to open a display! (0x%x)\n", eglGetError() );
 		throw GSDXRecoverableError();
@@ -338,10 +331,18 @@ void *GSWndEGL_X11::CreateNativeWindow(int w, int h)
 	return (void*)&m_NativeWindow;
 }
 
-void *GSWndEGL_X11::AttachNativeWindow(void *handle)
+void GSWndEGL_X11::AttachNativeWindow(void *handle, void **out_native_display, void **out_native_window)
 {
-	m_NativeWindow = *(Window*)handle;
-	return handle;
+	uptr *window_ptr = (uptr*)handle + 1;
+	m_NativeWindow = (Window)*window_ptr;
+
+	// We only need a native display when we manage the window ourself.
+	// By default, EGL will create its own native display. This way the driver knows
+	// that display will be thread safe and so it can enable multithread optimization.
+	m_NativeDisplay = nullptr;
+
+	*out_native_display = m_NativeDisplay;
+	*out_native_window = window_ptr;
 }
 
 void GSWndEGL_X11::DestroyNativeResources()
@@ -413,12 +414,12 @@ static const xdg_surface_listener gs_wl_xdg_surface_listener = {
 
 static void gs_xdg_toplevel_configure(void *data, xdg_toplevel *xdg_toplevel, int32_t width, int32_t height, wl_array *states)
 {
-	// TODO
+	// TODO: Implement this for the CreateNativeWindow codepath.
 }
 
 static void gs_xdg_toplevel_close(void *data, xdg_toplevel *xdg_toplevel)
 {
-	// TODO
+	// TODO: Implement this for the CreateNativeWindow codepath.
 }
 
 static const xdg_toplevel_listener gs_wl_xdg_toplevel_listener = {
@@ -433,8 +434,8 @@ static void gs_wl_client_log_handler(const char *msg, va_list args) {
 
 GSWndEGL_WL::GSWndEGL_WL()
 	: GSWndEGL(EGL_PLATFORM_WAYLAND_KHR), m_NativeDisplay(nullptr), m_NativeWindow(nullptr),
-	  m_wl_registry(nullptr), m_wl_compositor(nullptr), m_xdg_wm_base(nullptr),
-	  m_wl_surface(nullptr), m_xdg_surface(nullptr), m_xdg_toplevel(nullptr)
+	  m_wl_registry(nullptr), m_wl_compositor(nullptr), m_wl_subcompositor(nullptr), m_xdg_wm_base(nullptr),
+	  m_wl_surface(nullptr), m_wl_subsurface(nullptr), m_xdg_surface(nullptr), m_xdg_toplevel(nullptr)
 {
 	// TODO: Move this to location where it will only ever execute once?
 	wl_log_set_handler_client(gs_wl_client_log_handler);
@@ -445,6 +446,9 @@ void GSWndEGL_WL::RegistryAddGlobal(wl_registry *registry, uint32_t name, const 
 	if (strcmp(interface, wl_compositor_interface.name) == 0) {
 		m_wl_compositor = (wl_compositor *)wl_registry_bind(registry, name, &wl_compositor_interface, 4);
 	}
+	if (strcmp(interface, wl_subcompositor_interface.name) == 0) {
+		m_wl_subcompositor = (wl_subcompositor *)wl_registry_bind(registry, name, &wl_subcompositor_interface, 1);
+	}
 	if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
 		m_xdg_wm_base = (xdg_wm_base *)wl_registry_bind(registry, name, &xdg_wm_base_interface, 1);
 		xdg_wm_base_add_listener(m_xdg_wm_base, &gs_xdg_wm_base_listener, this);
@@ -453,13 +457,12 @@ void GSWndEGL_WL::RegistryAddGlobal(wl_registry *registry, uint32_t name, const 
 
 void GSWndEGL_WL::RegistryRemoveGlobal(wl_registry *registry, uint32_t name)
 {
-	// TODO
+	// TODO: Implement this for the CreateNativeWindow codepath.
 }
 
 void GSWndEGL_WL::XDGSurfaceConfigure(xdg_surface *xdg_surface)
 {
-	// TODO?
-	wl_surface_commit(m_wl_surface);
+	// TODO: Implement this for the CreateNativeWindow codepath.
 }
 
 void *GSWndEGL_WL::CreateNativeDisplay()
@@ -531,13 +534,15 @@ void *GSWndEGL_WL::CreateNativeWindow(int w, int h)
 	return m_NativeWindow;
 }
 
-void *GSWndEGL_WL::AttachNativeWindow(void *handle)
+void GSWndEGL_WL::AttachNativeWindow(void *handle, void **out_native_display, void **out_native_window)
 {
-	// TODO
-	// m_NativeWindow = (wl_egl_window*)handle;
-	// return handle;
-	CreateNativeDisplay();
-	return CreateNativeWindow(512, 512);
+	// the caller provides us with a display and surface through pDsp.
+	// we are allowed to render whatever we want to the given surface.
+	PluginDisplayPropertiesWayland *props = *(PluginDisplayPropertiesWayland **)handle;
+	// we don't store the display or surface because we don't own them.
+
+	*out_native_display = props->display;
+	*out_native_window = props->egl_window;
 }
 
 void GSWndEGL_WL::DestroyNativeResources()
@@ -586,12 +591,18 @@ void GSWndEGL_WL::DestroyNativeResources()
 
 bool GSWndEGL_WL::SetWindowText(const char* title)
 {
-	if (!m_managed) return true;
+	if (m_managed) {
+		// we created our own window and thus should have a toplevel
+		if (m_xdg_toplevel == nullptr) return false;
 
-	if (m_xdg_toplevel == nullptr) return false;
-
-	xdg_toplevel_set_title(m_xdg_toplevel, title);
-	return true;
+		xdg_toplevel_set_title(m_xdg_toplevel, title);
+		return true;
+	}
+	else
+	{
+		// we did not create our own window so we can't fulfill this request
+		return true;
+	}
 }
 
 #endif
