@@ -330,7 +330,7 @@ void Pcsx2App::PadKeyDispatch( const keyEvent& ev )
 	{
 		if( GSFrame* gsFrame = wxGetApp().GetGsFramePtr() )
 		{
-			gsFrame->GetViewport()->DirectKeyCommand( m_kevt );
+			gsFrame->DirectKeyCommand(m_kevt);
 		}
 		else
 		{
@@ -540,9 +540,9 @@ void DoFmvSwitch(bool on)
 		} else {
 			switchAR = false;
 		}
+
 		if (GSFrame* gsFrame = wxGetApp().GetGsFramePtr())
-			if (GSPanel* viewport = gsFrame->GetViewport())
-				viewport->DoResize();
+			gsFrame->UpdateSizeAndPosition();
 	}
 }
 
@@ -809,13 +809,6 @@ MainEmuFrame& Pcsx2App::GetMainFrame() const
 	return  *mainFrame;
 }
 
-GSFrame& Pcsx2App::GetGsFrame() const
-{
-	GSFrame* gsFrame  = (GSFrame*)wxWindow::FindWindowById( m_id_GsFrame );
-	pxAssert(gsFrame != NULL);
-	return  *gsFrame;
-}
-
 void Pcsx2App::enterDebugMode()
 {
 	DisassemblyDialog* dlg = GetDisassemblyPtr();
@@ -942,120 +935,41 @@ SysMainMemory& Pcsx2App::GetVmReserve()
 
 void Pcsx2App::OpenGsPanel()
 {
-	if( AppRpc_TryInvoke( &Pcsx2App::OpenGsPanel ) ) return;
+	if (AppRpc_TryInvoke(&Pcsx2App::OpenGsPanel)) return;
 
 	GSFrame* gsFrame = GetGsFramePtr();
-	if( gsFrame == NULL )
+	if (gsFrame == nullptr)
 	{
-		gsFrame = new GSFrame(GetAppName() );
+		gsFrame = new GSFrame(GetAppName());
 		m_id_GsFrame = gsFrame->GetId();
 
-		switch( wxGetApp().Overrides.GsWindowMode )
+		switch (wxGetApp().Overrides.GsWindowMode)
 		{
-			case GsWinMode_Windowed:
-				g_Conf->GSWindow.IsFullscreen = false;
-			break;
-
-			case GsWinMode_Fullscreen:
-				g_Conf->GSWindow.IsFullscreen = true;
-			break;
-
-			case GsWinMode_Unspecified:
-				g_Conf->GSWindow.IsFullscreen = g_Conf->GSWindow.DefaultToFullscreen;
-			break;
+		    case GsWinMode_Windowed:
+		        g_Conf->GSWindow.IsFullscreen = false;
+		        break;
+		    case GsWinMode_Fullscreen:
+		        g_Conf->GSWindow.IsFullscreen = true;
+		        break;
+		    case GsWinMode_Unspecified:
+		        g_Conf->GSWindow.IsFullscreen = g_Conf->GSWindow.DefaultToFullscreen;
+		        break;
 		}
 	}
-	else
-	{
-		// This is an attempt to hackfix a bug in nvidia's 195.xx drivers: When using
-		// Aero and DX10, the driver fails to update the window after the device has changed,
-		// until some event like a hide/show or resize event is posted to the window.
-		// Presumably this forces the driver to re-cache the visibility info.
-		// Notes:
-		//   Doing an immediate hide/show didn't work.  So now I'm trying a resize.  Because
-		//   wxWidgets is "clever" (grr!) it optimizes out just force-setting the same size
-		//   over again, so instead I resize it to size-1 and then back to the original size.
-		//
-		// FIXME: Gsdx memory leaks in DX10 have been fixed.  This code may not be needed
-		// anymore.
-		
-		const wxSize oldsize( gsFrame->GetSize() );
-		wxSize newsize( oldsize );
-		newsize.DecBy(1);
 
-		gsFrame->SetSize( newsize );
-		gsFrame->SetSize( oldsize );
-	}
-	
-	pxAssertDev( !GetCorePlugins().IsOpen( PluginId_GS ), "GS Plugin must be closed prior to opening a new Gs Panel!" );
+	pxAssertDev(!GetCorePlugins().IsOpen(PluginId_GS), "GS Plugin must be closed prior to opening a new Gs Panel!");
 
 #ifdef __WXGTK__
-	// The x window/display are actually very deeper in the widget. You need both display and window
-	// because unlike window there are unrelated. One could think it would be easier to send directly the GdkWindow.
-	// Unfortunately there is a race condition between gui and gs threads when you called the
-	// GDK_WINDOW_* macro. To be safe I think it is best to do here. It only cost a slight
-	// extension (fully compatible) of the plugins API. -- Gregory
-
-	// GTK_PIZZA is an internal interface of wx, therefore they decide to
-	// remove it on wx 3. I tryed to replace it with gtk_widget_get_window but
-	// unfortunately it creates a gray box in the middle of the window on some
-	// users.
-
-	GtkWidget *child_window = GTK_WIDGET(gsFrame->GetViewport()->GetHandle());
-
-	gtk_widget_realize(child_window); // create the widget to allow to use GDK_WINDOW_* macro
-	gtk_widget_set_double_buffered(child_window, false); // Disable the widget double buffer, you will use the opengl one
-	gtk_widget_map(child_window);
-	gtk_widget_show(child_window);
-
-	GdkWindow* draw_window = gtk_widget_get_window(child_window);
-
-#ifdef GDK_WINDOWING_WAYLAND
-	if (GDK_IS_WAYLAND_WINDOW(draw_window))
-	{
-		GdkDisplay* display = gdk_window_get_display(draw_window);
-
-		// pass enough Wayland context to the plugin so it can create its surface
-		// TODO: Who is responsible for freeing? Same person who clears pDsp.
-		PluginDisplayPropertiesWayland *props_wl = new PluginDisplayPropertiesWayland;
-		props_wl->display = (void *)gdk_wayland_display_get_wl_display(display);
-		props_wl->parent_surface = (void *)gdk_wayland_window_get_wl_surface(draw_window);
-		gdk_window_get_geometry(draw_window, &props_wl->x, &props_wl->y, &props_wl->w, &props_wl->h);
-		props_wl->scale = gdk_window_get_scale_factor(draw_window);
-
-		pDsp[0] = (uptr)(void *)props_wl;
-		pDsp[1] = (uptr)NULL;
-    }
-	else
-#endif
-#ifdef GDK_WINDOWING_X11
-	if (GDK_IS_X11_WINDOW(draw_window))
-	{
-	    #if GTK_MAJOR_VERSION < 3
-		Window Xwindow = GDK_WINDOW_XWINDOW(draw_window);
-        #else
-		Window Xwindow = GDK_WINDOW_XID(draw_window);
-        #endif
-		Display* XDisplay = GDK_WINDOW_XDISPLAY(draw_window);
-
-	    pDsp[0] = (uptr)XDisplay;
-	    pDsp[1] = (uptr)Xwindow;
-    }
-	else
-#endif
-	{
-		// TODO: Is this branch taken on Windows?
-		pxAssertDev(false, "Unknown GDK display type. Can't initialize GS Plugin.");
-	}
+	gsFrame->InitWxGTKWaylandEGL();
 #else
-	pDsp[0] = (uptr)gsFrame->GetViewport()->GetHandle();
+	pDsp[0] = (uptr)gsFrame->GetViewportWindowHandle();
 	pDsp[1] = (uptr)NULL;
 #endif
 
-	gsFrame->ShowFullScreen( g_Conf->GSWindow.IsFullscreen );
+	gsFrame->ShowFullScreen(g_Conf->GSWindow.IsFullscreen);
 
 #ifndef DISABLE_RECORDING
-	// Disable recording controls that only make sense if the game is running
+	// Enable recording controls that only make sense if the game is running
 	sMainFrame.enableRecordingMenuItem(MenuId_Recording_FrameAdvance, true);
 	sMainFrame.enableRecordingMenuItem(MenuId_Recording_TogglePause, true);
 	sMainFrame.enableRecordingMenuItem(MenuId_Recording_ToggleRecordingMode, g_InputRecording.IsActive());
@@ -1064,15 +978,7 @@ void Pcsx2App::OpenGsPanel()
 
 void Pcsx2App::CloseGsPanel()
 {
-	if (AppRpc_TryInvoke(&Pcsx2App::CloseGsPanel))
-		return;
-
-	if (CloseViewportWithPlugins)
-	{
-		if (GSFrame* gsFrame = GetGsFramePtr())
-			if (GSPanel* woot = gsFrame->GetViewport())
-				woot->Destroy();
-	}
+	if (AppRpc_TryInvoke(&Pcsx2App::CloseGsPanel)) return;
 }
 
 void Pcsx2App::OnGsFrameClosed(wxWindowID id)

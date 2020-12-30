@@ -602,14 +602,9 @@ void MainEmuFrame::Menu_EnableRecordingTools_Click(wxCommandEvent& event)
 	{
 		GetMenuBar()->Insert(TopLevelMenu_InputRecording, &m_menuRecording, _("&Input Record"));
 		SysConsole.recordingConsole.Enabled = true;
-		// Enable Recording Keybindings
+
 		if (GSFrame* gsFrame = wxGetApp().GetGsFramePtr())
-		{
-			if (GSPanel* viewport = gsFrame->GetViewport())
-			{
-				viewport->InitRecordingAccelerators();
-			}
-		}
+			gsFrame->EnableRecordingKeybindings();
 	}
 	else
 	{
@@ -617,17 +612,16 @@ void MainEmuFrame::Menu_EnableRecordingTools_Click(wxCommandEvent& event)
 		if (g_InputRecording.IsActive())
 			Menu_Recording_Stop_Click(event);
 		GetMenuBar()->Remove(TopLevelMenu_InputRecording);
+
 		// Always turn controller logs off, but never turn it on by default
 		SysConsole.controlInfo.Enabled = checked;
+
 		// Return Keybindings Back to Normal
 		if (GSFrame* gsFrame = wxGetApp().GetGsFramePtr())
-		{
-			if (GSPanel* viewport = gsFrame->GetViewport())
-			{
-				viewport->RemoveRecordingAccelerators();
-			}
-		}
+			gsFrame->DisableRecordingKeybindings();
+
 		SysConsole.recordingConsole.Enabled = false;
+
 		if (g_InputRecordingControls.IsPaused())
 			g_InputRecordingControls.Resume();
 	}

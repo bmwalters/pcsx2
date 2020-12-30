@@ -539,57 +539,7 @@ void GSWndEGL_WL::AttachNativeWindow(void *display_handle, void *surface_handle,
 		throw GSDXRecoverableError();
 	}
 
-	// the caller provides us with a display and surface through pDsp.
-	// we create a subsurface of the parent surface to render to.
-	PluginDisplayPropertiesWayland props = **(PluginDisplayPropertiesWayland **)display_handle;
-	// we don't store display or parent_surface because we don't own them.
-
-	m_wl_registry = wl_display_get_registry(props.display);
-	wl_registry_add_listener(m_wl_registry, &gs_wl_registry_listener, this);
-
-	wl_display_roundtrip(props.display);
-	if (m_wl_compositor == nullptr) {
-		fprintf(stderr, "EGL Wayland: wl_compositor global not present\n");
-		throw GSDXRecoverableError();
-	}
-	if (m_wl_subcompositor == nullptr) {
-		fprintf(stderr, "EGL Wayland: wl_subcompositor global not present\n");
-		throw GSDXRecoverableError();
-	}
-
-	m_wl_surface = wl_compositor_create_surface(m_wl_compositor);
-	if (m_wl_surface == nullptr) {
-		fprintf(stderr, "EGL Wayland: wl_compositor_create_surface failed\n");
-		throw GSDXRecoverableError();
-	}
-
-	m_wl_subsurface = wl_subcompositor_get_subsurface(m_wl_subcompositor, m_wl_surface, props.parent_surface);
-	if (m_wl_subsurface == nullptr) {
-		fprintf(stderr, "EGL Wayland: wl_subcompositor_get_subsurface failed\n");
-		throw GSDXRecoverableError();
-	}
-	wl_subsurface_set_desync(m_wl_subsurface);
-	wl_subsurface_set_position(m_wl_subsurface, props.x, props.y);
-
-	// Give the subsurface an empty input region so the main surface gets input.
-	wl_region *region = wl_compositor_create_region(m_wl_compositor);
-	if (region == nullptr) {
-		fprintf(stderr, "EGL Wayland: wl_compositor_create_region failed\n");
-		throw GSDXRecoverableError();
-	}
-	wl_surface_set_input_region(m_wl_surface, region);
-	wl_region_destroy(region);
-
-	m_NativeWindow = wl_egl_window_create(m_wl_surface, props.w * props.scale, props.h * props.scale);
-	if (m_NativeWindow == nullptr) {
-		fprintf(stderr, "EGL Wayland: wl_egl_window_create failed\n");
-		throw GSDXRecoverableError();
-	}
-
-	wl_surface_commit(m_wl_surface);
-
-	wl_display_flush(props.display);
-	wl_display_roundtrip(props.display);
+	m_NativeWindow = **(wl_egl_window **)display_handle;
 
 	*out_native_display = props.display;
 	*out_native_window = m_NativeWindow;
@@ -597,10 +547,11 @@ void GSWndEGL_WL::AttachNativeWindow(void *display_handle, void *surface_handle,
 
 void GSWndEGL_WL::DestroyNativeResources()
 {
-	if (m_NativeWindow) {
-		wl_egl_window_destroy(m_NativeWindow);
-		m_NativeWindow = nullptr;
-	}
+	// TODO: If NativeWindow was attached, are we the owners who should free it?
+//	if (m_NativeWindow) {
+//		wl_egl_window_destroy(m_NativeWindow);
+//		m_NativeWindow = nullptr;
+//	}
 
 	if (m_xdg_toplevel) {
 		xdg_toplevel_destroy(m_xdg_toplevel);

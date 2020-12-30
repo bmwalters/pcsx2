@@ -298,8 +298,6 @@ void GSPanel::OnResize(wxSizeEvent& event)
 {
 	if( IsBeingDeleted() ) return;
 	DoResize();
-	//Console.Error( "Size? %d x %d", GetSize().x, GetSize().y );
-	//event.
 }
 
 void GSPanel::OnCloseWindow(wxCloseEvent& evt)
@@ -543,13 +541,13 @@ GSFrame::GSFrame( const wxString& title)
 
 	AppStatusEvent_OnSettingsApplied();
 
-	GSPanel* gsPanel = new GSPanel( this );
-	m_id_gspanel = gsPanel->GetId();
+	m_viewport = new GSPanel( this );
 
 	// TODO -- Implement this GS window status window!  Whee.
 	// (main concern is retaining proper client window sizes when closing/re-opening the window).
 	//m_statusbar = CreateStatusBar( 2 );
 
+	Bind(wxEVT_SHOW, &GSFrame::OnShow, this);
 	Bind(wxEVT_CLOSE_WINDOW, &GSFrame::OnCloseWindow, this);
 	Bind(wxEVT_MOVE, &GSFrame::OnMove, this);
 	Bind(wxEVT_SIZE, &GSFrame::OnResize, this);
@@ -564,33 +562,13 @@ void GSFrame::OnCloseWindow(wxCloseEvent& evt)
 	Hide();		// and don't close it.
 }
 
-bool GSFrame::ShowFullScreen(bool show, bool updateConfig)
+// TODO: Move this.
+void GSFrame::InitWxGTKWaylandEGL()
 {
-	/*if( show != IsFullScreen() )
-		Console.WriteLn( Color_StrongMagenta, "(gsFrame) Switching to %s mode...", show ? "Fullscreen" : "Windowed" );*/
-
-	if (updateConfig && g_Conf->GSWindow.IsFullscreen != show)
-	{
-		g_Conf->GSWindow.IsFullscreen = show;
-		wxGetApp().PostIdleMethod( AppSaveSettings );
-	}
-
-	// IMPORTANT!  On MSW platforms you must ALWAYS show the window prior to calling
-	// ShowFullscreen(), otherwise the window will be oddly unstable (lacking input and unable
-	// to properly flip back into fullscreen mode after alt-enter).  I don't know if that
-	// also happens on Linux.
-
-	if( !IsShown() ) Show();
-
-	uint flags = wxFULLSCREEN_ALL;
-#ifdef _WIN32
-	flags |= g_Conf->GSWindow.EnableVsyncWindowFlag ? WS_POPUP : 0;
-#endif
-	bool retval = _parent::ShowFullScreen( show, flags );
-
-	return retval;
+	// TODO: Put a wl_egl_window in pDsp.
+	pDsp[0] = nullptr;
+	pDsp[1] = nullptr;
 }
-
 
 void GSFrame::CoreThread_OnResumed()
 {
@@ -625,46 +603,6 @@ void GSFrame::CorePlugins_OnShutdown()
 	if( !IsBeingDeleted() ) Destroy();
 }
 
-// overrides base Show behavior.
-bool GSFrame::Show( bool shown )
-{
-	if( shown )
-	{
-		GSPanel* gsPanel = GetViewport();
-
-		if( !gsPanel || gsPanel->IsBeingDeleted() )
-		{
-			gsPanel = new GSPanel( this );
-			m_id_gspanel = gsPanel->GetId();
-		}
-
-		gsPanel->DoResize();
-		gsPanel->SetFocus();
-
-		if (!m_timer_UpdateTitle.IsRunning())
-		{
-#ifndef DISABLE_RECORDING
-			if (g_Conf->EmuOptions.EnableRecordingTools)
-			{
-				m_timer_UpdateTitle.Start(TitleBarUpdateMsWhenRecording);
-			}
-			else
-			{
-				m_timer_UpdateTitle.Start(TitleBarUpdateMs);
-			}
-#else
-			m_timer_UpdateTitle.Start(TitleBarUpdateMs);
-#endif
-		}
-	}
-	else
-	{
-		m_timer_UpdateTitle.Stop();
-	}
-
-	return _parent::Show( shown );
-}
-
 void GSFrame::AppStatusEvent_OnSettingsApplied()
 {
 	if( IsBeingDeleted() ) return;
@@ -680,11 +618,6 @@ void GSFrame::AppStatusEvent_OnSettingsApplied()
 		if( IsShown() && !CorePlugins.IsOpen(PluginId_GS) )
 			Show( false );
 	}
-}
-
-GSPanel* GSFrame::GetViewport()
-{
-	return (GSPanel*)FindWindowById( m_id_gspanel );
 }
 
 void GSFrame::OnUpdateTitle( wxTimerEvent& evt )
@@ -784,12 +717,42 @@ void GSFrame::OnUpdateTitle( wxTimerEvent& evt )
 	SetTitle(title);
 }
 
+void GSFrame::OnShow(wxShowEvent& evt)
+{
+	// enable/disable window title updates when window is shown/hidden
+	if(evt.IsShown())
+	{
+		m_viewport->DoResize();
+		m_viewport->SetFocus();
+
+		if (!m_timer_UpdateTitle.IsRunning())
+		{
+#ifndef DISABLE_RECORDING
+			if (g_Conf->EmuOptions.EnableRecordingTools)
+			{
+				m_timer_UpdateTitle.Start(TitleBarUpdateMsWhenRecording);
+			}
+			else
+			{
+				m_timer_UpdateTitle.Start(TitleBarUpdateMs);
+			}
+#else
+			m_timer_UpdateTitle.Start(TitleBarUpdateMs);
+#endif
+		}
+	}
+	else
+	{
+		m_timer_UpdateTitle.Stop();
+	}
+}
+
 void GSFrame::OnActivate( wxActivateEvent& evt )
 {
 	if( IsBeingDeleted() ) return;
 
 	evt.Skip();
-	if( wxWindow* gsPanel = GetViewport() ) gsPanel->SetFocus();
+	m_viewport->SetFocus();
 }
 
 void GSFrame::OnMove( wxMoveEvent& evt )
@@ -816,8 +779,7 @@ void GSFrame::OnMove( wxMoveEvent& evt )
 void GSFrame::SetFocus()
 {
 	_parent::SetFocus();
-	if( GSPanel* gsPanel = GetViewport() )
-		gsPanel->SetFocusFromKbd();
+	m_viewport->SetFocusFromKbd();
 }
 
 void GSFrame::OnResize( wxSizeEvent& evt )
@@ -829,15 +791,35 @@ void GSFrame::OnResize( wxSizeEvent& evt )
 		g_Conf->GSWindow.WindowSize	= GetClientSize();
 	}
 
-	if( GSPanel* gsPanel = GetViewport() )
-	{
-		gsPanel->DoResize();
-		gsPanel->SetFocus();
+	if (m_viewport) {
+		m_viewport->DoResize();
+		m_viewport->SetFocus();
 	}
+}
 
-	//wxPoint hudpos = wxPoint(-10,-10) + (GetClientSize() - m_hud->GetSize());
-	//m_hud->SetPosition( hudpos ); //+ GetScreenPosition() + GetClientAreaOrigin() );
+void GSFrame::UpdateSizeAndPosition()
+{
+	if (m_viewport) m_viewport->DoResize();
+}
 
-	// if we skip, the panel is auto-sized to fit our window anyway, which we do not want!
-	//evt.Skip();
+WXWidget GSFrame::GetViewportWindowHandle()
+{
+	if (m_viewport)
+		return m_viewport->GetHandle();
+	return NULL;
+}
+
+void GSFrame::DirectKeyCommand(wxKeyEvent& evt)
+{
+	if (m_viewport) m_viewport->DirectKeyCommand(evt);
+}
+
+void GSFrame::EnableRecordingKeybindings()
+{
+	if (m_viewport) m_viewport->InitRecordingAccelerators();
+}
+
+void GSFrame::DisableRecordingKeybindings()
+{
+	if (m_viewport) m_viewport->RemoveRecordingAccelerators();
 }

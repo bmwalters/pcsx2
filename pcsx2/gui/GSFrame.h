@@ -93,8 +93,8 @@ class GSFrame : public wxFrame
 
 protected:
 	wxTimer					m_timer_UpdateTitle;
-	wxWindowID				m_id_gspanel;
 	wxStatusBar*			m_statusbar;
+	GSPanel*                m_viewport;
 
 	CpuUsageProvider		m_CpuUsage;
 
@@ -102,13 +102,21 @@ public:
 	GSFrame( const wxString& title);
 	virtual ~GSFrame() = default;
 
-	GSPanel* GetViewport();
 	void SetFocus();
-	bool Show( bool shown=true );
 
-	bool ShowFullScreen(bool show, bool updateConfig = true);
+	void InitWxGTKWaylandEGL();
+
+	void UpdateSizeAndPosition();
+
+	WXWidget GetViewportWindowHandle();
+
+	void DirectKeyCommand(wxKeyEvent& evt);
+
+	void EnableRecordingKeybindings();
+	void DisableRecordingKeybindings();
 
 protected:
+	void OnShow(wxShowEvent& evt);
 	void OnCloseWindow( wxCloseEvent& evt );
 	void OnMove( wxMoveEvent& evt );
 	void OnResize( wxSizeEvent& evt );
@@ -121,15 +129,3 @@ protected:
 	void CoreThread_OnStopped();
 	void CorePlugins_OnShutdown();
 };
-
-// --------------------------------------------------------------------------------------
-//  s* macros!  ['s' stands for 'shortcut']
-// --------------------------------------------------------------------------------------
-// Use these for "silent fail" invocation of PCSX2 Application-related constructs.  If the
-// construct (albeit wxApp, MainFrame, CoreThread, etc) is null, the requested method will
-// not be invoked, and an optional "else" clause can be affixed for handling the end case.
-//
-// See App.h (sApp) for more details.
-//
-#define sGSFrame \
-	if( GSFrame* __gsframe_ = wxGetApp().GetGsFramePtr() ) (*__gsframe_)

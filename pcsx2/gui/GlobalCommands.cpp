@@ -180,8 +180,7 @@ namespace Implementations
 		//However, the events sequence it generates also "depresses" Shift/CTRL/etc, so consecutive zoom with CTRL down breaks.
 		//Since zoom only affects the window viewport anyway, we can live with directly calling it.
 		if (GSFrame* gsFrame = wxGetApp().GetGsFramePtr())
-			if (GSPanel* woot = gsFrame->GetViewport())
-				woot->DoResize();
+			gsFrame->UpdateSizeAndPosition();
 	}
 
 	void GSwindow_CycleAspectRatio()
@@ -321,7 +320,7 @@ namespace Implementations
 			// the content stays on screen. Try to prevent that by first exiting fullscreen,
 			// but don't update the internal PCSX2 state/config, and PCSX2 will restore
 			// fullscreen correctly when emulation resumes according to its state/config.
-			gsframe->ShowFullScreen(false, false);
+			gsframe->ShowFullScreen(false);
 		}
 
 		CoreThread.Suspend();
@@ -509,9 +508,15 @@ namespace Implementations
 
 	void FullscreenToggle()
 	{
-		if (GSFrame* gsframe = wxGetApp().GetGsFramePtr())
-			gsframe->ShowFullScreen(!gsframe->IsFullScreen());
+		if (GSFrame* gsFrame = wxGetApp().GetGsFramePtr()) {
+			gsFrame->ShowFullScreen(!gsFrame->IsFullScreen());
+
+			// save the new setting
+			g_Conf->GSWindow.IsFullscreen = gsFrame->IsFullScreen();
+			wxGetApp().PostIdleMethod(AppSaveSettings);
+		}
 	}
+
 #ifndef DISABLE_RECORDING
 	void FrameAdvance()
 	{
