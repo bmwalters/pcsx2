@@ -32,12 +32,28 @@
 #include <windowsx.h>
 
 #else
-/*
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
-*/
+// x11 is dumb like that
+#undef DisableScreenSaver
 
+#ifndef __APPLE__
+#include "wayland-gsdisplay.h"
+
+struct GSDisplayHandle
+{
+	bool is_wayland;
+
+	union
+	{
+		struct { Display* display; Window window; } x11;
+		PluginDisplayPropertiesWayland* wayland;
+	};
+};
+
+extern GSDisplayHandle GSdisplay;
+#endif
 #endif
 
 #include <array>
