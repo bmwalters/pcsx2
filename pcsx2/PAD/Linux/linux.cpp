@@ -92,15 +92,10 @@ void PADupdate(int pad)
 {
 #ifndef __APPLE__
 	// Gamepad inputs don't count as an activity. Therefore screensaver will
-	// be fired after a couple of minute.
-	// Emulate an user activity
-	if (GSdisplay.is_wayland)
-	{
-		// TODO
-	}
-	else
-	{
-		static int count = 0;
+	// be fired after a couple minutes. Emulate a user activity.
+	// On Wayland we can attach an idle inhibitor to our surface so this is not needed.
+	static int count = 0;
+	if (!GSdisplay.is_wayland) {
 		count++;
 		if ((count & 0xFFF) == 0)
 		{
