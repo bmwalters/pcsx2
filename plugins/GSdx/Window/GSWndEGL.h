@@ -117,6 +117,7 @@ public:
 #include <wayland-client.h>
 #include <wayland-egl.h>
 #include <wayland-xdg-shell-client-protocol.h>
+#include <wayland-idle-inhibit-unstable-v1-client-protocol.h>
 
 class GSWndEGL_WL : public GSWndEGL
 {
@@ -127,11 +128,13 @@ class GSWndEGL_WL : public GSWndEGL
 	wl_compositor    *m_wl_compositor;
 	wl_subcompositor *m_wl_subcompositor;
 	xdg_wm_base      *m_xdg_wm_base;
+	zwp_idle_inhibit_manager_v1 *m_idle_inhibit_manager;
 
 	wl_surface    *m_wl_surface;
 	wl_subsurface *m_wl_subsurface;
 	xdg_surface   *m_xdg_surface;
 	xdg_toplevel  *m_xdg_toplevel;
+	zwp_idle_inhibitor_v1* m_idle_inhibitor;
 
 public:
 	GSWndEGL_WL();
@@ -160,6 +163,7 @@ struct PluginDisplayPropertiesWayland {
 	wl_egl_window* egl_window;
 	wl_surface* surface;
 	wl_subsurface* subsurface;
+	zwp_idle_inhibitor_v1* idle_inhibitor;
 };
 
 #endif

@@ -225,6 +225,9 @@ else()
     WAYLAND_ADD_PROTOCOL_CLIENT(GSdxSources
                                 "${WAYLAND_PROTOCOLS_DIR}/stable/xdg-shell/xdg-shell.xml"
                                 xdg-shell)
+    WAYLAND_ADD_PROTOCOL_CLIENT(GSdxSources
+                                "${WAYLAND_PROTOCOLS_DIR}/unstable/idle-inhibit/idle-inhibit-unstable-v1.xml"
+                                idle-inhibit-unstable-v1)
 endif()
 
 

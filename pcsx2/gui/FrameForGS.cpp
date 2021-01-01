@@ -863,6 +863,7 @@ struct NecessaryWaylandGlobals
 {
 	wl_compositor *compositor;
 	wl_subcompositor *subcompositor;
+	zwp_idle_inhibit_manager_v1 *idle_inhibit_manager;
 };
 
 static void gs_wl_registry_add_global(void *data, wl_registry *registry, uint32_t name, const char *interface, uint32_t version)
@@ -874,6 +875,9 @@ static void gs_wl_registry_add_global(void *data, wl_registry *registry, uint32_
 	}
 	if (strcmp(interface, wl_subcompositor_interface.name) == 0) {
 		globals->subcompositor = (wl_subcompositor *)wl_registry_bind(registry, name, &wl_subcompositor_interface, 1);
+	}
+	if (strcmp(interface, zwp_idle_inhibit_manager_v1_interface.name) == 0) {
+		globals->idle_inhibit_manager = (zwp_idle_inhibit_manager_v1 *)wl_registry_bind(registry, name, &zwp_idle_inhibit_manager_v1_interface, 1);
 	}
 }
 
@@ -900,7 +904,7 @@ PluginDisplayPropertiesWayland* GSFrame::GetPluginDisplayPropertiesWaylandEGL()
 	}
 
 	// retrieve wl_compositor and wl_subcompositor from the registry
-	NecessaryWaylandGlobals globals { nullptr, nullptr, };
+	NecessaryWaylandGlobals globals { nullptr, nullptr, nullptr, };
 	wl_registry_add_listener(registry, &gs_wl_registry_listener, &globals);
 	wl_display_roundtrip(display);
 	if (globals.compositor == nullptr) {
@@ -961,6 +965,13 @@ PluginDisplayPropertiesWayland* GSFrame::GetPluginDisplayPropertiesWaylandEGL()
 		return nullptr;
 	}
 
+	// inhibit idle while the child surface is presented
+	zwp_idle_inhibitor_v1 *idle_inhibitor = nullptr;
+	if (globals.idle_inhibit_manager) {
+		idle_inhibitor = zwp_idle_inhibit_manager_v1_create_inhibitor(globals.idle_inhibit_manager, child_surface);
+		zwp_idle_inhibit_manager_v1_destroy(globals.idle_inhibit_manager);
+	}
+
 	// pass the wl_egl_window we created to the GS plugin for drawing.
 	// TODO: Who is responsible for freeing? Same person who clears pDsp.
 	//       NOTE: Person who frees must not release the display. It is shared.
@@ -969,6 +980,7 @@ PluginDisplayPropertiesWayland* GSFrame::GetPluginDisplayPropertiesWaylandEGL()
 	props_wl->egl_window = egl_window;
 	props_wl->surface = child_surface;
 	props_wl->subsurface = subsurface;
+	props_wl->idle_inhibitor = idle_inhibitor;
 	return props_wl;
 }
 

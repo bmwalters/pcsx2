@@ -999,11 +999,22 @@ set(Common
 # platform sources
 # Linux
 if(Linux)
+	set(pcsx2LinuxWaylandProtocols
+	    )
+	include(Wayland)
+	WAYLAND_ADD_PROTOCOL_CLIENT(pcsx2LinuxWaylandProtocols
+	                            "${WAYLAND_PROTOCOLS_DIR}/unstable/idle-inhibit/idle-inhibit-unstable-v1.xml"
+	                            idle-inhibit-unstable-v1)
+
+	set_source_files_properties(${pcsx2LinuxSources} PROPERTIES LANGUAGE CXX)
+	set_source_files_properties(${pcsx2LinuxWaylandProtocols} PROPERTIES LANGUAGE C)
+
 	set(Platform
 		${pcsx2LinuxSources}
 		${pcsx2LinuxHeaders}
 		${pcsx2USBSources}
 		${pcsx2USBHeaders}
+		${pcsx2LinuxWaylandProtocols}
 		)
 		
 	set(Platform_Libs
