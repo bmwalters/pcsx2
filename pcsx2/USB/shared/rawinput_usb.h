@@ -17,6 +17,7 @@
 #include <windows.h>
 #include <setupapi.h>
 #include "hidapi.h"
+#include "NativeWindowHandle.h"
 
 namespace shared
 {
@@ -29,7 +30,7 @@ namespace shared
 			virtual void ParseRawInput(PRAWINPUT pRawInput) = 0;
 		};
 
-		int Initialize(void* hWnd);
+		int Initialize(const NativeWindowHandle& window_handle);
 		void Uninitialize();
 
 		void RegisterCallback(ParseRawInputCB* cb);

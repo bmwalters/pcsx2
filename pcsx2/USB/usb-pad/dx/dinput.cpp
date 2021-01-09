@@ -35,9 +35,6 @@
 		}                   \
 	}
 
-//dialog window stuff
-extern HWND gsWnd;
-
 namespace usb_pad
 {
 	namespace dx
@@ -935,9 +932,9 @@ namespace usb_pad
 		{
 			HWND hWin = nullptr;
 
-			if (gsWnd)
+			if (USB_gsWindowHandle && USB_gsWindowHandle.win32)
 			{
-				hWin = gsWnd;
+				hWin = USB_gsWindowHandle.win32;
 			}
 			else
 			{
