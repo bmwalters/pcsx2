@@ -23,7 +23,7 @@
 #include "wx_dialog/dialog.h"
 
 #ifndef __APPLE__
-GSDisplayHandle GSdisplay;
+NativeWindowHandle* PADgsWindowHandle;
 #endif
 
 static void SysMessage(const char* fmt, ...)
@@ -42,24 +42,11 @@ static void SysMessage(const char* fmt, ...)
 	dialog.ShowModal();
 }
 
-s32 _PADopen(void* pDsp)
+s32 _PADopen(NativeWindowHandle* pGSWindowHandle)
 {
 #ifndef __APPLE__
-	// the wayland GS display handle happens to set pDsp[1] to NULL
-	// so we can use this to check if pDsp is X11 or Wayland.
-	if (((void **)pDsp)[1] == nullptr)
-	{
-		GSdisplay.is_wayland = true;
-		GSdisplay.wayland = *(PluginDisplayPropertiesWayland **)pDsp;
-	}
-	else
-	{
-		GSdisplay.is_wayland = false;
-		GSdisplay.x11.display = *((Display**)pDsp);
-		GSdisplay.x11.window = (Window)*((uptr*)pDsp + 1);
-	}
+	PADgsWindowHandle = pGSWindowHandle;
 #endif
-
 	return 0;
 }
 
@@ -95,12 +82,12 @@ void PADupdate(int pad)
 	// be fired after a couple minutes. Emulate a user activity.
 	// On Wayland we can attach an idle inhibitor to our surface so this is not needed.
 	static int count = 0;
-	if (!GSdisplay.is_wayland) {
+	if (PADgsWindowHandle->kind == NativeWindowHandle::X11) {
 		count++;
 		if ((count & 0xFFF) == 0)
 		{
 			// 1 call every 4096 Vsync is enough
-			XResetScreenSaver(GSdisplay.x11.display);
+			XResetScreenSaver(PADgsWindowHandle->x11.display);
 		}
 	}
 #endif

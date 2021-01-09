@@ -20,15 +20,13 @@
 
 #if defined(__unix__) || defined(__APPLE__)
 
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/keysym.h>
+
 extern void AnalyzeKeyEvent(keyEvent& evt);
 extern void UpdateKeyboardInput();
 extern bool PollForNewKeyboardKeys(u32& pkey);
-
-#else
-
-extern char* KeysymToChar(int keysym);
-extern WNDPROC GSwndProc;
-extern HWND GShwnd;
 
 #endif
 

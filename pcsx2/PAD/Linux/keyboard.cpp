@@ -160,18 +160,21 @@ void AnalyzeKeyEvent(keyEvent& evt)
 				s_grab_input = !s_grab_input;
 				if (s_grab_input)
 				{
-					if (!GSdisplay.is_wayland)
+					if (PADgsWindowHandle->kind == NativeWindowHandle::X11)
 					{
-						XGrabPointer(GSdisplay.x11.display, GSdisplay.x11.window, True, ButtonPressMask, GrabModeAsync, GrabModeAsync, GSdisplay.x11.window, 0, CurrentTime);
-						XGrabKeyboard(GSdisplay.x11.display, GSdisplay.x11.window, True, GrabModeAsync, GrabModeAsync, CurrentTime);
+						Display* display = PADgsWindowHandle->x11.display;
+						Window window = PADgsWindowHandle->x11.window;
+						XGrabPointer(display, window, True, ButtonPressMask, GrabModeAsync, GrabModeAsync, window, 0, CurrentTime);
+						XGrabKeyboard(display, window, True, GrabModeAsync, GrabModeAsync, CurrentTime);
 					}
 				}
 				else
 				{
-					if (!GSdisplay.is_wayland)
+					if (PADgsWindowHandle->kind == NativeWindowHandle::X11)
 					{
-						XUngrabPointer(GSdisplay.x11.display, CurrentTime);
-						XUngrabKeyboard(GSdisplay.x11.display, CurrentTime);
+						Display* display = PADgsWindowHandle->x11.display;
+						XUngrabPointer(display, CurrentTime);
+						XUngrabKeyboard(display, CurrentTime);
 					}
 				}
 			}
@@ -302,22 +305,21 @@ static void UpdateKeyboardInput_X11(Display* display, Window window)
 	}
 }
 
-static void UpdateKeyboardInput_Wayland(PluginDisplayPropertiesWayland* props)
-{
-	// On Wayland at least, all keyboard input is sent to us from the main GUI,
-	// not the surface rendered to by GS. Thus we don't need to do anything here.
-}
-
 void UpdateKeyboardInput()
 {
 	// Keyboard input send by PCSX2
 	g_ev_fifo.consume_all(AnalyzeKeyEvent);
 
 	// keyboard input
-	if (GSdisplay.is_wayland)
-		UpdateKeyboardInput_Wayland(GSdisplay.wayland);
-	else
-		UpdateKeyboardInput_X11(GSdisplay.x11.display, GSdisplay.x11.window);
+	switch (PADgsWindowHandle->kind) {
+		case NativeWindowHandle::WAYLAND:
+			// On Wayland at least, keyboard input is captured by the main GUI
+			// and passed with PADWriteEvent. Here we have no input to handle.
+			break;
+		case NativeWindowHandle::X11:
+			UpdateKeyboardInput_X11(PADgsWindowHandle->x11.display, PADgsWindowHandle->x11.window);
+			break;
+	}
 }
 
 bool PollForNewKeyboardKeys(u32& pkey)
@@ -339,74 +341,5 @@ bool PollForNewKeyboardKeys(u32& pkey)
 	}
 
 	return false;
-}
-
-#else
-LRESULT WINAPI PADwndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-	static bool lbutton = false, rbutton = false;
-	for (int pad = 0; pad < GAMEPAD_NUMBER; ++pad)
-	{
-		g_key_status.keyboard_state_acces(pad);
-	}
-
-	switch (msg)
-	{
-		case WM_KEYDOWN:
-			if (lParam & 0x40000000)
-				return TRUE;
-
-			for (int pad = 0; pad < GAMEPAD_NUMBER; ++pad)
-			{
-				for (int i = 0; i < MAX_KEYS; i++)
-				{
-					assert(0);
-#if 0
-                    if (wParam == get_key(pad, i)) {
-                        g_key_status.press(pad, i);
-                        break;
-                    }
-#endif
-				}
-			}
-
-			event.evt = KEYPRESS;
-			event.key = wParam;
-			break;
-
-		case WM_KEYUP:
-			for (int pad = 0; pad < GAMEPAD_NUMBER; ++pad)
-			{
-				for (int i = 0; i < MAX_KEYS; i++)
-				{
-					assert(0);
-#if 0
-                    if (wParam == get_key(pad, i)) {
-                        g_key_status.release(pad, i);
-                        break;
-                    }
-#endif
-				}
-			}
-
-
-			event.evt = KEYRELEASE;
-			event.key = wParam;
-			break;
-
-		case WM_DESTROY:
-		case WM_QUIT:
-			event.evt = KEYPRESS;
-			event.key = VK_ESCAPE;
-			return GSwndProc(hWnd, msg, wParam, lParam);
-
-		default:
-			return GSwndProc(hWnd, msg, wParam, lParam);
-	}
-
-	for (int pad = 0; pad < GAMEPAD_NUMBER; ++pad)
-		g_key_status.commit_status(pad);
-
-	return TRUE;
 }
 #endif

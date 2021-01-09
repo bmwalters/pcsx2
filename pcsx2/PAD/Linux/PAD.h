@@ -24,39 +24,12 @@
 #include <wx/filename.h>
 #include "Utilities/pxStreams.h"
 #include "Utilities/Console.h"
+#include "NativeWindowHandle.h"
 #include <stdio.h>
 #include <assert.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#include <windowsx.h>
-
-#else
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <X11/keysym.h>
-// undef an Xlib macro that conflicts with our symbols
-#undef DisableScreenSaver
-
 #ifndef __APPLE__
-#include "NativeWindowHandle.h"
-
-struct GSDisplayHandle
-{
-	bool is_wayland;
-
-	union
-	{
-		struct {
-			Display* display;
-			Window window;
-		} x11;
-		PluginDisplayPropertiesWayland* wayland;
-	};
-};
-
-extern GSDisplayHandle GSdisplay;
-#endif
+extern NativeWindowHandle* PADgsWindowHandle;
 #endif
 
 #include <array>
@@ -140,7 +113,7 @@ extern void initLogging();
 extern keyEvent event;
 extern MtQueue<keyEvent> g_ev_fifo;
 
-s32 _PADopen(void* pDsp);
+s32 _PADopen(NativeWindowHandle* pGSWindowHandle);
 void _PADclose();
 void PADsetMode(int pad, int mode);
 
@@ -152,7 +125,7 @@ void SysMessage(char* fmt, ...);
 
 s32 PADinit();
 void PADshutdown();
-s32 PADopen(void* pDsp);
+s32 PADopen(NativeWindowHandle* pGSWindowHandle);
 void PADsetLogDir(const char* dir);
 void PADclose();
 u32 PADquery();

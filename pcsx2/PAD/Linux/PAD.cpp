@@ -110,7 +110,7 @@ void PADshutdown()
 	CloseLogging();
 }
 
-s32 PADopen(void* pDsp)
+s32 PADopen(NativeWindowHandle* pGSWindowHandle)
 {
 	memset(&event, 0, sizeof(event));
 	g_key_status.Init();
@@ -120,7 +120,7 @@ s32 PADopen(void* pDsp)
 #if defined(__unix__) || defined(__APPLE__)
 	GamePad::EnumerateGamePads(s_vgamePad);
 #endif
-	return _PADopen(pDsp);
+	return _PADopen(pGSWindowHandle);
 }
 
 void PADsetLogDir(const char* dir)
