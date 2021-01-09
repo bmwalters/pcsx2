@@ -53,9 +53,6 @@
 #ifdef __WXGTK__
 #include <gdk/gdkx.h>
 #include <gtk/gtk.h>
-#ifdef GDK_WINDOWING_WAYLAND
-#include <gdk/gdkwayland.h>
-#endif
 #endif
 
 // Safe to remove these lines when this is handled properly.
@@ -950,7 +947,7 @@ void Pcsx2App::OpenGsPanel()
 	GSFrame* gsFrame = GetGsFramePtr();
 	if( gsFrame == NULL )
 	{
-		gsFrame = new GSFrame(GetAppName() );
+		gsFrame = new GSFrame(GetAppName());
 		m_id_GsFrame = gsFrame->GetId();
 
 		switch( wxGetApp().Overrides.GsWindowMode )
@@ -992,61 +989,30 @@ void Pcsx2App::OpenGsPanel()
 	
 	pxAssertDev( !GetCorePlugins().IsOpen( PluginId_GS ), "GS Plugin must be closed prior to opening a new Gs Panel!" );
 
-#ifdef __WXGTK__
-	// The x window/display are actually very deeper in the widget. You need both display and window
-	// because unlike window there are unrelated. One could think it would be easier to send directly the GdkWindow.
-	// Unfortunately there is a race condition between gui and gs threads when you called the
-	// GDK_WINDOW_* macro. To be safe I think it is best to do here. It only cost a slight
-	// extension (fully compatible) of the plugins API. -- Gregory
+	// ShowFullScreen must be called before GetNativeWindowHandle
+	// so that the viewport's window is created before we access it.
+	gsFrame->ShowFullScreen(g_Conf->GSWindow.IsFullscreen);
 
-	// GTK_PIZZA is an internal interface of wx, therefore they decide to
-	// remove it on wx 3. I tryed to replace it with gtk_widget_get_window but
-	// unfortunately it creates a gray box in the middle of the window on some
-	// users.
+	pGSWindowHandle = gsFrame->GetNativeWindowHandle();
 
-	GtkWidget *child_window = GTK_WIDGET(gsFrame->GetViewport()->GetHandle());
-
-	gtk_widget_realize(child_window); // create the widget to allow to use GDK_WINDOW_* macro
-	gtk_widget_set_double_buffered(child_window, false); // Disable the widget double buffer, you will use the opengl one
-
-	GdkWindow* draw_window = gtk_widget_get_window(child_window);
-
-	// For Wayland ShowFullScreen must be called before GetPluginDisplayProperties
-	// so that the viewport's wl_surface is created before we access it.
-	gsFrame->ShowFullScreen( g_Conf->GSWindow.IsFullscreen );
-
-#ifdef GDK_WINDOWING_WAYLAND
-	if (GDK_IS_WAYLAND_WINDOW(draw_window))
-	{
-		pDsp[0] = (uptr)gsFrame->GetPluginDisplayPropertiesWaylandEGL();
-		pDsp[1] = (uptr)nullptr;
+	// DEPRECATED
+	switch (pGSWindowHandle->kind) {
+#if defined(__unix__)
+		case NativeWindowHandle::WAYLAND:
+			pDsp[0] = (uptr)&pGSWindowHandle->wayland;
+			pDsp[1] = (uptr)nullptr;
+			break;
+		case NativeWindowHandle::X11:
+			pDsp[0] = (uptr)pGSWindowHandle->x11.display;
+			pDsp[1] = (uptr)pGSWindowHandle->x11.window;
+			break;
+#elif defined(_WIN32)
+		case NativeWindowHandle::WIN32:
+			pDsp[0] = (uptr)pGSWindowHandle->win32;
+			pDsp[1] = (uptr)nullptr;
+			break;
+#endif
 	}
-	else
-#endif
-#ifdef GDK_WINDOWING_X11
-	if (GDK_IS_X11_WINDOW(draw_window))
-	{
-#if GTK_MAJOR_VERSION < 3
-		Window Xwindow = GDK_WINDOW_XWINDOW(draw_window);
-#else
-		Window Xwindow = GDK_WINDOW_XID(draw_window);
-#endif
-		Display* XDisplay = GDK_WINDOW_XDISPLAY(draw_window);
-
-		pDsp[0] = (uptr)XDisplay;
-		pDsp[1] = (uptr)Xwindow;
-	}
-	else
-#endif
-	{
-		pxAssertDev(false, "Unknown GDK display type. Can't initialize GS Plugin.");
-	}
-#else
-	pDsp[0] = (uptr)gsFrame->GetViewport()->GetHandle();
-	pDsp[1] = (uptr)nullptr;
-
-	gsFrame->ShowFullScreen( g_Conf->GSWindow.IsFullscreen );
-#endif
 
 #ifndef DISABLE_RECORDING
 	// Enable New & Play after the first game load of the session
@@ -1067,19 +1033,16 @@ void Pcsx2App::CloseGsPanel()
 
 	if (GSFrame* gsFrame = GetGsFramePtr())
 	{
-#if defined(__WXGTK__) && defined(GDK_WINDOWING_WAYLAND)
-		if (GDK_IS_WAYLAND_WINDOW(gtk_widget_get_window(gsFrame->GetViewport()->GetHandle())))
-		{
-			PluginDisplayPropertiesWayland* props_wl = *(PluginDisplayPropertiesWayland **)pDsp;
-			gsFrame->DestroyPluginDisplayPropertiesWayland(props_wl);
-			pDsp[0] = (uptr)nullptr;
-			pDsp[1] = (uptr)nullptr;
-		}
-#endif
-
 		if (CloseViewportWithPlugins)
 			if (GSPanel* viewport = gsFrame->GetViewport())
+			{
 				viewport->Destroy();
+				pGSWindowHandle = nullptr;
+
+				// DEPRECATED
+				pDsp[0] = (uptr)nullptr;
+				pDsp[1] = (uptr)nullptr;
+			}
 	}
 }
 

@@ -39,7 +39,7 @@
 #undef DisableScreenSaver
 
 #ifndef __APPLE__
-#include "wayland-gsdisplay.h"
+#include "NativeWindowHandle.h"
 
 struct GSDisplayHandle
 {

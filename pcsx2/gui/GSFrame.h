@@ -19,17 +19,14 @@
 #include "AppCommon.h"
 #include "CpuUsageProvider.h"
 #include <memory>
+#include "NativeWindowHandle.h"
 
 #ifdef __WXGTK__
 #include <gdk/gdkx.h>
 #include <gtk/gtk.h>
 #ifdef GDK_WINDOWING_WAYLAND
 #include <gdk/gdkwayland.h>
-#include "wayland-gsdisplay.h"
 #endif
-// undef Xlib macros that conflict with our symbols
-#undef DisableScreenSaver
-#undef Status
 #endif
 
 enum LimiterModeType
@@ -108,6 +105,15 @@ protected:
 
 	CpuUsageProvider		m_CpuUsage;
 
+	NativeWindowHandle		m_native_window_handle;
+
+#if defined(__WXGTK__) && defined(GDK_WINDOWING_WAYLAND)
+	wl_egl_window*			m_wl_egl_window;
+	wl_subsurface*			m_wl_subsurface;
+	// This surface is a child of the viewport's wayland surface.
+	wl_surface*				m_wl_child_surface;
+#endif
+
 public:
 	GSFrame( const wxString& title);
 	virtual ~GSFrame() = default;
@@ -118,12 +124,14 @@ public:
 
 	bool ShowFullScreen(bool show, bool updateConfig = true);
 
-#if defined(__WXGTK__) && defined(GDK_WINDOWING_WAYLAND)
-	PluginDisplayPropertiesWayland* GetPluginDisplayPropertiesWaylandEGL();
-	void DestroyPluginDisplayPropertiesWayland(PluginDisplayPropertiesWayland* props_wl);
-#endif
+	// Used to share a window handle between the GS plugin and core GUI.
+	// This pointer becomes invalid when the GSFrame is Destroyed.
+	NativeWindowHandle* GetNativeWindowHandle() { return &m_native_window_handle; }
 
 protected:
+	void InitNativeWindowHandle();
+
+	void OnDestroy(wxWindowDestroyEvent& evt);
 	void OnCloseWindow( wxCloseEvent& evt );
 	void OnMove( wxMoveEvent& evt );
 	void OnResize( wxSizeEvent& evt );

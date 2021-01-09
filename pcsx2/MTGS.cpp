@@ -212,9 +212,20 @@ void SysMtgsThread::OpenPlugin()
 	int result;
 
 	if (GSopen2 != NULL)
+	{
 		result = GSopen2((void*)pDsp, 1 | (renderswitch ? 4 : 0));
+	}
 	else
+	{
 		result = GSopen((void*)pDsp, "PCSX2", renderswitch ? 2 : 1);
+
+		// DEPRECATED: GS should use pGSWindowHandle directly.
+		if (result == 0) // 0 indicates success
+		{
+			// TODO: Fill in pGSWindowHandle based on pDsp
+			// TODO: Does GSdx even fill in pDsp all the way?
+		}
+	}
 
 
 	GSsetVsync(EmuConfig.GS.GetVsync());

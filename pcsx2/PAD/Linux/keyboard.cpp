@@ -162,7 +162,7 @@ void AnalyzeKeyEvent(keyEvent& evt)
 				{
 					if (!GSdisplay.is_wayland)
 					{
-						XGrabPointer(GSdisplay.x11.display, GSdisplay.x11.window, True, ButtonPressMask, GrabModeAsync, GrabModeAsync, GSdisplay.x11.window, None, CurrentTime);
+						XGrabPointer(GSdisplay.x11.display, GSdisplay.x11.window, True, ButtonPressMask, GrabModeAsync, GrabModeAsync, GSdisplay.x11.window, 0, CurrentTime);
 						XGrabKeyboard(GSdisplay.x11.display, GSdisplay.x11.window, True, GrabModeAsync, GrabModeAsync, CurrentTime);
 					}
 				}

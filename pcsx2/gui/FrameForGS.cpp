@@ -532,6 +532,12 @@ static const uint TitleBarUpdateMs = 333;
 static const uint TitleBarUpdateMsWhenRecording = 50;
 #endif
 
+static bool CreateWaylandSubsurface(const wxWindow* widget,
+									wl_display*& out_display,
+									wl_surface*& out_surface,
+									wl_subsurface*& out_subsurface,
+									wl_egl_window*& out_egl_window);
+
 GSFrame::GSFrame( const wxString& title)
 	: wxFrame(NULL, wxID_ANY, title, g_Conf->GSWindow.WindowPos)
 	, m_timer_UpdateTitle( this )
@@ -544,11 +550,14 @@ GSFrame::GSFrame( const wxString& title)
 	GSPanel* gsPanel = new GSPanel( this );
 	m_id_gspanel = gsPanel->GetId();
 
+	InitNativeWindowHandle();
+
 	// TODO -- Implement this GS window status window!  Whee.
 	// (main concern is retaining proper client window sizes when closing/re-opening the window).
 	//m_statusbar = CreateStatusBar( 2 );
 
 	Bind(wxEVT_CLOSE_WINDOW, &GSFrame::OnCloseWindow, this);
+	Bind(wxEVT_DESTROY, &GSFrame::OnDestroy, this);
 	Bind(wxEVT_MOVE, &GSFrame::OnMove, this);
 	Bind(wxEVT_SIZE, &GSFrame::OnResize, this);
 	Bind(wxEVT_ACTIVATE, &GSFrame::OnActivate, this);
@@ -556,10 +565,96 @@ GSFrame::GSFrame( const wxString& title)
 	Bind(wxEVT_TIMER, &GSFrame::OnUpdateTitle, this, m_timer_UpdateTitle.GetId());
 }
 
+void GSFrame::InitNativeWindowHandle()
+{
+#ifdef __WXGTK__
+	// The x window/display are actually very deeper in the widget. You need both display and window
+	// because unlike window there are unrelated. One could think it would be easier to send directly the GdkWindow.
+	// Unfortunately there is a race condition between gui and gs threads when you called the
+	// GDK_WINDOW_* macro. To be safe I think it is best to do here. It only cost a slight
+	// extension (fully compatible) of the plugins API. -- Gregory
+
+	// GTK_PIZZA is an internal interface of wx, therefore they decide to
+	// remove it on wx 3. I tryed to replace it with gtk_widget_get_window but
+	// unfortunately it creates a gray box in the middle of the window on some
+	// users.
+
+	GtkWidget *child_window = GTK_WIDGET(GetViewport()->GetHandle());
+
+	gtk_widget_realize(child_window); // create the widget to allow to use GDK_WINDOW_* macro
+	gtk_widget_set_double_buffered(child_window, false); // Disable the widget double buffer, you will use the opengl one
+
+	GdkWindow* draw_window = gtk_widget_get_window(child_window);
+
+#ifdef GDK_WINDOWING_WAYLAND
+	if (GDK_IS_WAYLAND_WINDOW(draw_window))
+	{
+		wl_display* display = nullptr;
+		bool created = CreateWaylandSubsurface(GetViewport(),
+											   display,
+											   m_wl_child_surface,
+											   m_wl_subsurface,
+											   m_wl_egl_window);
+		pxAssertDev(created, "Wayland subsurface creation failed.");
+
+		m_native_window_handle.kind = NativeWindowHandle::WAYLAND;
+		m_native_window_handle.wayland.display = display;
+		m_native_window_handle.wayland.egl_window = m_wl_egl_window;
+	}
+	else
+#endif
+#ifdef GDK_WINDOWING_X11
+	if (GDK_IS_X11_WINDOW(draw_window))
+	{
+#if GTK_MAJOR_VERSION < 3
+		Window Xwindow = GDK_WINDOW_XWINDOW(draw_window);
+#else
+		Window Xwindow = GDK_WINDOW_XID(draw_window);
+#endif
+		Display* XDisplay = GDK_WINDOW_XDISPLAY(draw_window);
+
+		m_native_window_handle.kind = NativeWindowHandle::X11;
+		m_native_window_handle.x11.window = Xwindow;
+		m_native_window_handle.x11.display = XDisplay;
+	}
+	else
+#endif
+	{
+		pxAssertDev(false, "Unknown GDK display type. Can't initialize GS Plugin.");
+	}
+#else
+	m_native_window_handle.kind = NativeWindowHandle::WIN32;
+	m_native_window_handle.win32 = gsFrame->GetViewport()->GetHandle();
+#endif
+}
+
+void GSFrame::OnDestroy(wxWindowDestroyEvent& evt)
+{
+#if defined(__WXGTK__) && defined(GDK_WINDOWING_WAYLAND)
+	if (m_native_window_handle.kind == NativeWindowHandle::WAYLAND)
+	{
+		if (m_wl_egl_window) {
+			wl_egl_window_destroy(m_wl_egl_window);
+			m_wl_egl_window = nullptr;
+		}
+
+		if (m_wl_subsurface) {
+			wl_subsurface_destroy(m_wl_subsurface);
+			m_wl_subsurface = nullptr;
+		}
+
+		if (m_wl_child_surface) {
+			wl_surface_destroy(m_wl_child_surface);
+			m_wl_child_surface = nullptr;
+		}
+	}
+#endif
+}
+
 void GSFrame::OnCloseWindow(wxCloseEvent& evt)
 {
 	sApp.OnGsFrameClosed( GetId() );
-	Hide();		// and don't close it.
+	Hide();		// and don't destroy it.
 }
 
 bool GSFrame::ShowFullScreen(bool show, bool updateConfig)
@@ -833,19 +928,17 @@ void GSFrame::OnResize( wxSizeEvent& evt )
 		gsPanel->SetFocus();
 
 #if defined(__WXGTK__) && defined(GDK_WINDOWING_WAYLAND)
-		if (GDK_IS_WAYLAND_WINDOW(gtk_widget_get_window(gsPanel->GetHandle()))
-			&& pDsp != nullptr)
+		if (m_native_window_handle.kind == NativeWindowHandle::WAYLAND)
 		{
 			int x, y, w, h;
 			gsPanel->GetPosition(&x, &y);
 			gsPanel->GetClientSize(&w, &h);
 			int scale = gsPanel->GetContentScaleFactor();
 
-			PluginDisplayPropertiesWayland props = **(PluginDisplayPropertiesWayland **)pDsp;
-			if (props.egl_window)
-				wl_egl_window_resize(props.egl_window, w * scale, h * scale, 0, 0);
-			if (props.subsurface)
-				wl_subsurface_set_position(props.subsurface, x, y);
+			if (m_wl_egl_window)
+				wl_egl_window_resize(m_wl_egl_window, w * scale, h * scale, 0, 0);
+			if (m_wl_subsurface)
+				wl_subsurface_set_position(m_wl_subsurface, x, y);
 		}
 #endif
 	}
@@ -886,9 +979,13 @@ static const wl_registry_listener gs_wl_registry_listener = {
 	gs_wl_registry_remove_global,
 };
 
-PluginDisplayPropertiesWayland* GSFrame::GetPluginDisplayPropertiesWaylandEGL()
+static bool CreateWaylandSubsurface(const wxWindow* widget,
+									wl_display*& out_display,
+									wl_surface*& out_surface,
+									wl_subsurface*& out_subsurface,
+									wl_egl_window*& out_egl_window)
 {
-	GdkWindow *draw_window = gtk_widget_get_window(this->GetViewport()->GetHandle());
+	GdkWindow *draw_window = gtk_widget_get_window(widget->GetHandle());
 
 	// retrieve the wl_display and parent wl_surface from GTK - we don't own these
 	wl_display* display = gdk_wayland_display_get_wl_display(gdk_window_get_display(draw_window));
@@ -897,7 +994,7 @@ PluginDisplayPropertiesWayland* GSFrame::GetPluginDisplayPropertiesWaylandEGL()
 	wl_registry* registry = wl_display_get_registry(display);
 	if (registry == nullptr) {
 		Console.Error("EGL Wayland: wl_display_get_registry failed");
-		return nullptr;
+		return false;
 	}
 
 	// retrieve wl_compositor and wl_subcompositor from the registry
@@ -907,12 +1004,12 @@ PluginDisplayPropertiesWayland* GSFrame::GetPluginDisplayPropertiesWaylandEGL()
 	if (globals.compositor == nullptr) {
 		Console.Error("EGL Wayland: wl_compositor global not present");
 		wl_registry_destroy(registry);
-		return nullptr;
+		return false;
 	}
 	if (globals.compositor == nullptr) {
 		Console.Error("EGL Wayland: wl_subcompositor global not present");
 		wl_registry_destroy(registry);
-		return nullptr;
+		return false;
 	}
 	wl_registry_destroy(registry);
 
@@ -922,7 +1019,7 @@ PluginDisplayPropertiesWayland* GSFrame::GetPluginDisplayPropertiesWaylandEGL()
 		Console.Error("EGL Wayland: wl_compositor_create_surface failed");
 		wl_compositor_destroy(globals.compositor);
 		wl_subcompositor_destroy(globals.subcompositor);
-		return nullptr;
+		return false;
 	}
 
 	// give the child surface an empty input region so input goes to the parent surface.
@@ -932,7 +1029,7 @@ PluginDisplayPropertiesWayland* GSFrame::GetPluginDisplayPropertiesWaylandEGL()
 		wl_compositor_destroy(globals.compositor);
 		wl_subcompositor_destroy(globals.subcompositor);
 		wl_surface_destroy(child_surface);
-		return nullptr;
+		return false;
 	}
 	wl_surface_set_input_region(child_surface, region);
 	wl_region_destroy(region);
@@ -945,49 +1042,29 @@ PluginDisplayPropertiesWayland* GSFrame::GetPluginDisplayPropertiesWaylandEGL()
 		Console.Error("EGL Wayland: wl_subcompositor_get_subsurface failed");
 		wl_subcompositor_destroy(globals.subcompositor);
 		wl_surface_destroy(child_surface);
-		return nullptr;
+		return false;
 	}
 	wl_subsurface_set_desync(subsurface);
 	wl_subcompositor_destroy(globals.subcompositor);
 
 	int w, h;
-	this->GetViewport()->GetClientSize(&w, &h);
-	int scale = this->GetViewport()->GetContentScaleFactor();
+	widget->GetClientSize(&w, &h);
+	int scale = widget->GetContentScaleFactor();
 
 	wl_egl_window *egl_window = wl_egl_window_create(child_surface, w * scale, h * scale);
 	if (egl_window == nullptr) {
 		Console.Error("EGL Wayland: wl_egl_window_create failed");
 		wl_subsurface_destroy(subsurface);
 		wl_surface_destroy(child_surface);
-		return nullptr;
+		return false;
 	}
 
-	// pass the wl_egl_window we created to the GS plugin for drawing.
-	PluginDisplayPropertiesWayland *props_wl = new PluginDisplayPropertiesWayland;
-	props_wl->display = display;
-	props_wl->egl_window = egl_window;
-	props_wl->surface = child_surface;
-	props_wl->subsurface = subsurface;
-	return props_wl;
-}
+	out_display = display;
+	out_surface = child_surface;
+	out_subsurface = subsurface;
+	out_egl_window = egl_window;
 
-void GSFrame::DestroyPluginDisplayPropertiesWayland(PluginDisplayPropertiesWayland* props_wl)
-{
-	if (props_wl == nullptr)
-		return;
-
-	if (props_wl->egl_window != nullptr)
-		wl_egl_window_destroy(props_wl->egl_window);
-
-	if (props_wl->subsurface != nullptr)
-		wl_subsurface_destroy(props_wl->subsurface);
-
-	if (props_wl->surface != nullptr)
-		wl_surface_destroy(props_wl->surface);
-
-	// we do not free props_wl->display since it comes from the GUI toolkit.
-
-	delete props_wl;
+	return true;
 }
 
 #endif
