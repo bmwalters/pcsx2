@@ -138,15 +138,20 @@ bool GSWndDX::Create(const std::string& title, int w, int h)
 	if (!m_hWnd)
 		throw GSDXRecoverableError();
 
+	m_native_window_handle = new NativeWindowHandle;
+	m_native_window_handle->kind = NativeWindowHandle::WIN32;
+	m_native_window_handle->win32 = m_hWnd;
+
 	return true;
 }
 
-bool GSWndDX::Attach(void* handle, bool managed)
+bool GSWndDX::Attach(NativeWindowHandle* handle)
 {
 	// TODO: subclass
 
-	m_hWnd = (HWND)handle;
-	m_managed = managed;
+	m_hWnd = handle->win32;
+	m_managed = false;
+	m_native_window_handle = handle;
 
 	return true;
 }
@@ -160,6 +165,11 @@ void GSWndDX::Detach()
 
 		DestroyWindow(m_hWnd);
 	}
+
+	if (m_managed)
+		delete m_native_window_handle;
+
+	m_native_window_handle = nullptr;
 
 	m_hWnd = NULL;
 	m_managed = true;

@@ -54,12 +54,12 @@ public:
 	virtual ~GSWndEGL() {};
 
 	bool Create(const std::string& title, int w, int h) final;
-	bool Attach(void* handle, bool managed = true) final;
+	bool Attach(NativeWindowHandle* handle) final;
 	void Detach() final;
 
 	virtual void *CreateNativeDisplay() = 0;
 	virtual void *CreateNativeWindow(int w, int h) = 0; // GSopen1/PSX API
-	virtual void AttachNativeWindow(void *handle, void **out_native_display, void **out_native_window) = 0;
+	virtual void AttachNativeWindow(NativeWindowHandle *native_window, void **out_native_display, void **out_native_window) = 0;
 	virtual void DestroyNativeResources() = 0;
 
 	GSVector4i GetClientRect();
@@ -75,13 +75,6 @@ public:
 	void Show() final {};
 	void Hide() final {};
 	void HideFrame() final {}; // DX9 API
-
-	virtual void* GetDisplay() = 0; // GSopen1 API
-	virtual void* GetHandle() = 0; // DX API
-
-	// Static to allow to query supported the platform
-	// before object creation
-	static int SelectPlatform(void *display_handle);
 };
 
 #if GS_EGL_X11
@@ -99,12 +92,12 @@ public:
 	GSWndEGL_X11();
 	virtual ~GSWndEGL_X11() {};
 
-	void* GetDisplay() final { return (void*)m_NativeDisplay;}
-	void* GetHandle() final {return (void*)&m_NativeWindow;}
+	// Static to allow querying platform support before object creation
+	static bool SupportsWindow(NativeWindowHandle* native_window);
 
 	void *CreateNativeDisplay() final;
 	void *CreateNativeWindow(int w, int h) final;
-	void AttachNativeWindow(void *handle, void **out_native_display, void **out_native_window) final;
+	void AttachNativeWindow(NativeWindowHandle *native_window, void **out_native_display, void **out_native_window) final;
 	void DestroyNativeResources() final;
 
 	bool SetWindowText(const char* title) final;
@@ -137,12 +130,12 @@ public:
 	GSWndEGL_WL();
 	virtual ~GSWndEGL_WL() {};
 
-	void* GetDisplay() final { return (void*)m_NativeDisplay;}
-	void* GetHandle() final {return (void*)m_NativeWindow;}
+	// Static to allow querying platform support before object creation
+	static bool SupportsWindow(NativeWindowHandle* native_window);
 
 	void *CreateNativeDisplay() final;
 	void *CreateNativeWindow(int w, int h) final;
-	void AttachNativeWindow(void *handle, void **out_native_display, void **out_native_window) final;
+	void AttachNativeWindow(NativeWindowHandle *native_window, void **out_native_display, void **out_native_window) final;
 	void DestroyNativeResources() final;
 
 	bool SetWindowText(const char* title) final;
@@ -153,15 +146,6 @@ public:
 	void XDGSurfaceConfigure(xdg_surface *xdg_surface, uint32_t serial);
 	void XDGToplevelConfigure(xdg_toplevel *xdg_toplevel, int32_t width, int32_t height, wl_array *states);
 	void XDGToplevelClose(xdg_toplevel *xdg_toplevel);
-};
-
-// When the GS window handle is a Wayland window,
-// the first entry of pDsp will point to one of these.
-struct PluginDisplayPropertiesWayland {
-	wl_display* display; // NOTE: This display is not owned by this struct.
-	wl_egl_window* egl_window;
-	wl_surface* surface;
-	wl_subsurface* subsurface;
 };
 
 #endif

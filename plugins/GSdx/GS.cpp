@@ -189,10 +189,13 @@ EXPORT_C GSclose()
 	}
 }
 
-static int _GSopen(void** dsp, const char* title, GSRendererType renderer, int threads = -1)
+static int _GSopen(NativeWindowHandle** win_handle, const char* title, GSRendererType renderer, int threads = -1)
 {
 	GSDevice* dev = NULL;
-	bool old_api = *dsp == NULL;
+
+	// The old GSopen API will pass us a null window handle. In this case,
+	// we are expected to create our own window and store it in win_handle.
+	bool old_api = *win_handle == nullptr;
 
 	// Fresh start up or config file changed
 	if(renderer == GSRendererType::Undefined)
@@ -235,20 +238,11 @@ static int _GSopen(void** dsp, const char* title, GSRendererType renderer, int t
 #if defined(__unix__)
 					// Note: EGL code use GLX otherwise maybe it could be also compatible with Windows
 					// Yes OpenGL code isn't complicated enough !
-					switch (GSWndEGL::SelectPlatform(dsp)) {
-#if GS_EGL_X11
-						case EGL_PLATFORM_X11_KHR:
-							wnds.push_back(std::make_shared<GSWndEGL_X11>());
-							break;
-#endif
-#if GS_EGL_WL
-						case EGL_PLATFORM_WAYLAND_KHR:
-							wnds.push_back(std::make_shared<GSWndEGL_WL>());
-							break;
-#endif
-						default:
-							break;
-					}
+					if (GSWndEGL_X11::SupportsWindow(*win_handle))
+						wnds.push_back(std::make_shared<GSWndEGL_X11>());
+
+					if (GSWndEGL_WL::SupportsWindow(*win_handle))
+						wnds.push_back(std::make_shared<GSWndEGL_WL>());
 #elif defined(__APPLE__)
 					// No windows available for macOS at the moment
 #else
@@ -268,11 +262,6 @@ static int _GSopen(void** dsp, const char* title, GSRendererType renderer, int t
 
 			int w = theApp.GetConfigI("ModeWidth");
 			int h = theApp.GetConfigI("ModeHeight");
-#if defined(__unix__)
-			void *win_handle = dsp;
-#else
-			void *win_handle = *dsp;
-#endif
 
 			for(auto& wnd : wnds)
 			{
@@ -285,11 +274,11 @@ static int _GSopen(void** dsp, const char* title, GSRendererType renderer, int t
 
 						wnd->Show();
 
-						*dsp = wnd->GetDisplay();
+						*win_handle = wnd->GetNativeWindowHandle();
 					}
 					else
 					{
-						wnd->Attach(win_handle, false);
+						wnd->Attach(*win_handle);
 					}
 
 					window = wnd; // Previous code will throw if window isn't supported
@@ -421,7 +410,7 @@ EXPORT_C_(void) GSosdMonitor(const char *key, const char *value, uint32 color)
 	if(s_gs && s_gs->m_dev) s_gs->m_dev->m_osd.Monitor(key, value);
 }
 
-EXPORT_C_(int) GSopen2(void** dsp, uint32 flags)
+EXPORT_C_(int) GSopen2(NativeWindowHandle** dsp, uint32 flags)
 {
 	static bool stored_toggle_state = false;
 	const bool toggle_state = !!(flags & 4);
@@ -474,7 +463,7 @@ EXPORT_C_(int) GSopen2(void** dsp, uint32 flags)
 	return retval;
 }
 
-EXPORT_C_(int) GSopen(void** dsp, const char* title, int mt)
+EXPORT_C_(int) GSopen(NativeWindowHandle** dsp, const char* title, int mt)
 {
 	GSRendererType renderer = GSRendererType::Default;
 
@@ -494,8 +483,7 @@ EXPORT_C_(int) GSopen(void** dsp, const char* title, int mt)
 		renderer = static_cast<GSRendererType>(theApp.GetConfigI("Renderer"));
 	}
 
-	*dsp = NULL;
-
+	*dsp = nullptr;
 	int retval = _GSopen(dsp, title, renderer);
 
 	if(retval == 0 && s_gs)
@@ -1017,9 +1005,9 @@ EXPORT_C GSReplay(HWND hwnd, HINSTANCE hinst, LPSTR lpszCmdLine, int nCmdShow)
 
 	s_vsync = theApp.GetConfigI("vsync");
 
-	HWND hWnd = nullptr;
+	NativeWindowHandle *win_handle = nullptr;
 
-	_GSopen((void**)&hWnd, "", renderer);
+	_GSopen(&win_handle, "", renderer);
 
 	uint32 crc;
 	file->Read(&crc, 4);
@@ -1085,7 +1073,7 @@ EXPORT_C GSReplay(HWND hwnd, HINSTANCE hinst, LPSTR lpszCmdLine, int nCmdShow)
 	Sleep(100);
 
 	std::vector<uint8> buff;
-	while(IsWindowVisible(hWnd))
+	while(IsWindowVisible(win_handle->win32))
 	{
 		for(auto &p : packets)
 		{
@@ -1374,8 +1362,8 @@ EXPORT_C GSReplay(char* lpszCmdLine, int renderer)
 
 	long frame_number = 0;
 
-	void* hWnd = NULL;
-	int err = _GSopen((void**)&hWnd, "", m_renderer);
+	NativeWindowHandle *win_handle = nullptr;
+	int err = _GSopen(&win_handle, "", m_renderer);
 	if (err != 0) {
 		fprintf(stderr, "Error failed to GSopen\n");
 		return;

@@ -24,25 +24,40 @@
 #include "stdafx.h"
 #include "GSdx.h"
 #include "GSVector.h"
+#include "NativeWindowHandle.h"
+
+#if defined(__unix__)
+#include <X11/Xlib.h>
+// undef Xlib symbols that conflict with ours
+#undef None
+
+#include <wayland-client.h>
+#include <wayland-egl.h>
+#endif
 
 class GSWnd
 {
 protected:
-	bool m_managed; // set true when we're attached to a 3rdparty window that's amanged by the emulator
+	// set to true when we have created and manage our own window.
+	// false when we're attached to a window that is managed by the emulator.
+	bool m_managed;
+
+	// when m_managed is true, we own this pointer. otherwise we are sharing it.
+	NativeWindowHandle* m_native_window_handle;
 
 public:
-	GSWnd() : m_managed(false) {};
+	GSWnd() : m_managed(false), m_native_window_handle(nullptr) {};
 	virtual ~GSWnd() {};
 
 	virtual bool Create(const std::string& title, int w, int h) = 0;
-	virtual bool Attach(void* handle, bool managed = true) = 0;
+	virtual bool Attach(NativeWindowHandle* handle) = 0;
 	virtual void Detach() = 0;
-	bool IsManaged() const {return m_managed;}
+	bool IsManaged() const { return m_managed ;}
 
-	virtual void* GetDisplay() = 0;
-	virtual void* GetHandle() = 0;
 	virtual GSVector4i GetClientRect() = 0;
 	virtual bool SetWindowText(const char* title) = 0;
+
+	NativeWindowHandle* GetNativeWindowHandle() const { return m_native_window_handle; }
 
 	virtual void AttachContext() {};
 	virtual void DetachContext() {};
@@ -77,11 +92,9 @@ public:
 	virtual ~GSWndGL() {};
 
 	virtual bool Create(const std::string& title, int w, int h) = 0;
-	virtual bool Attach(void* handle, bool managed = true) = 0;
+	virtual bool Attach(NativeWindowHandle* handle) = 0;
 	virtual void Detach() = 0;
 
-	virtual void* GetDisplay() = 0;
-	virtual void* GetHandle() = 0;
 	virtual GSVector4i GetClientRect() = 0;
 	virtual bool SetWindowText(const char* title) = 0;
 

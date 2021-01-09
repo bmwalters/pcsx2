@@ -48,11 +48,9 @@ public:
 	virtual ~GSWndWGL() {};
 
 	bool Create(const std::string& title, int w, int h);
-	bool Attach(void* handle, bool managed = true);
+	bool Attach(NativeWindowHandle* handle);
 	void Detach();
 
-	void* GetDisplay() {return m_NativeWindow;}
-	void* GetHandle() {return m_NativeWindow;}
 	GSVector4i GetClientRect();
 	bool SetWindowText(const char* title);
 

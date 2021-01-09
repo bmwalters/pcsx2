@@ -153,10 +153,11 @@ void GSWndWGL::PopulateWndGlFunction()
 	}
 }
 
-bool GSWndWGL::Attach(void* handle, bool managed)
+bool GSWndWGL::Attach(NativeWindowHandle* handle)
 {
-	m_NativeWindow = (HWND)handle;
+	m_NativeWindow = handle->win32;
 	m_managed = managed;
+	m_native_window_handle = handle;
 
 	OpenWGLDisplay();
 
@@ -185,6 +186,10 @@ void GSWndWGL::Detach()
 		m_NativeWindow = NULL;
 	}
 
+	if (m_managed)
+		delete m_native_window_handle;
+
+	m_native_window_handle = nullptr;
 }
 
 void GSWndWGL::OpenWGLDisplay()
@@ -293,6 +298,10 @@ bool GSWndWGL::Create(const std::string& title, int w, int h)
 	m_NativeWindow = CreateWindow(wc.lpszClassName, title.c_str(), style, r.left, r.top, r.width(), r.height(), NULL, NULL, wc.hInstance, (LPVOID)this);
 
 	if (m_NativeWindow == NULL) return false;
+
+	m_native_window_handle = new NativeWindowHandle;
+	m_native_window_handle->kind = NativeWindowHandle::WIN32;
+	m_native_window_handle->win32 = m_NativeWindow;
 
 	OpenWGLDisplay();
 
