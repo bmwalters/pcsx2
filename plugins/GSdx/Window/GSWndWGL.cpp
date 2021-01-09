@@ -153,9 +153,9 @@ void GSWndWGL::PopulateWndGlFunction()
 	}
 }
 
-bool GSWndWGL::Attach(void* handle, bool managed)
+bool GSWndWGL::Attach(const NativeWindowHandle& handle)
 {
-	m_NativeWindow = (HWND)handle;
+	m_NativeWindow = handle.win32;
 	m_managed = managed;
 
 	OpenWGLDisplay();
@@ -184,7 +184,6 @@ void GSWndWGL::Detach()
 		DestroyWindow(m_NativeWindow);
 		m_NativeWindow = NULL;
 	}
-
 }
 
 void GSWndWGL::OpenWGLDisplay()
@@ -299,6 +298,11 @@ bool GSWndWGL::Create(const std::string& title, int w, int h)
 	FullContextInit();
 
 	return true;
+}
+
+NativeWindowHandle GSWndWGL::GetNativeWindowHandle()
+{
+	return { NativeWindowHandle::WIN32, m_NativeWindow };
 }
 
 //Same as DX
