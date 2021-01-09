@@ -326,7 +326,7 @@ void SysCoreThread::OnResumeInThread(bool isSuspended)
 	GetCorePlugins().Open();
 	if (isSuspended)
 	{
-		DEV9open((void*)pDsp);
+		DEV9open();
 		USBopen((void*)pDsp);
 	}
 	FWopen();
