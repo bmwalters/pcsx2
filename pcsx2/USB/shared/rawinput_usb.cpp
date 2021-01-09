@@ -200,14 +200,14 @@ namespace shared
 			return CONTINUE_BLISSFULLY;
 		}
 
-		int Initialize(void* ptr)
+		int Initialize(NativeWindowHandle* window_handle)
 		{
 			skipInput = false;
 			// Reinitialized without USBclose, like when disc swapping
 			if (inited)
 				return 1;
 
-			HWND hWnd = static_cast<HWND>(ptr);
+			HWND hWnd = window_handle->win32;
 			if (!InitHid())
 				return 0;
 

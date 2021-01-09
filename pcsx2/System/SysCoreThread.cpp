@@ -327,7 +327,7 @@ void SysCoreThread::OnResumeInThread(bool isSuspended)
 	if (isSuspended)
 	{
 		DEV9open();
-		USBopen((void*)pDsp);
+		USBopen(pGSWindowHandle);
 	}
 	FWopen();
 	SPU2open();

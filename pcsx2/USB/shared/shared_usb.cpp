@@ -24,10 +24,10 @@
 namespace shared
 {
 
-	void Initialize(void* ptr)
+	void Initialize(NativeWindowHandle* window_handle)
 	{
 #ifdef _WIN32
-		if (!shared::rawinput::Initialize(ptr))
+		if (!shared::rawinput::Initialize(window_handle))
 			throw std::runtime_error("Failed to initialize raw input!");
 #endif
 	}
