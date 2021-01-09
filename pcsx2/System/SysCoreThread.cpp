@@ -330,7 +330,7 @@ void SysCoreThread::OnResumeInThread(bool isSuspended)
 		USBopen((void*)pDsp);
 	}
 	FWopen();
-	SPU2open((void*)pDsp);
+	SPU2open();
 	PADopen((void*)pDsp);
 }
 
