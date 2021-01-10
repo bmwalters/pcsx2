@@ -995,25 +995,6 @@ void Pcsx2App::OpenGsPanel()
 
 	pGSWindowHandle = gsFrame->GetNativeWindowHandle();
 
-	// DEPRECATED
-	switch (pGSWindowHandle->kind) {
-#if defined(__unix__)
-		case NativeWindowHandle::WAYLAND:
-			pDsp[0] = (uptr)&pGSWindowHandle->wayland;
-			pDsp[1] = (uptr)nullptr;
-			break;
-		case NativeWindowHandle::X11:
-			pDsp[0] = (uptr)pGSWindowHandle->x11.display;
-			pDsp[1] = (uptr)pGSWindowHandle->x11.window;
-			break;
-#elif defined(_WIN32)
-		case NativeWindowHandle::WIN32:
-			pDsp[0] = (uptr)pGSWindowHandle->win32;
-			pDsp[1] = (uptr)nullptr;
-			break;
-#endif
-	}
-
 #ifndef DISABLE_RECORDING
 	// Enable New & Play after the first game load of the session
 	sMainFrame.enableRecordingMenuItem(MenuId_Recording_New, !g_InputRecording.IsActive());
@@ -1038,10 +1019,6 @@ void Pcsx2App::CloseGsPanel()
 			{
 				viewport->Destroy();
 				pGSWindowHandle = nullptr;
-
-				// DEPRECATED
-				pDsp[0] = (uptr)nullptr;
-				pDsp[1] = (uptr)nullptr;
 			}
 	}
 }
